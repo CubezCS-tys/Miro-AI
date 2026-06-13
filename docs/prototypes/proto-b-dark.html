@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Miro-AI · B · Notebook Dark</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#0e0e10; --card:#17171a; --ink:#f3f3f1; --ink-2:#b1b1ac; --ink-3:#6f6f69;
+    --line:rgba(243,243,241,0.62); --line-soft:rgba(243,243,241,0.14); --fill:#222227;
+    --shadow:#000000; --dot:rgba(255,255,255,0.10);
+    --hl-amber:#f6cf4d; --hl-cyan:#62c7d6; --hl-rose:#ec7f90; --hl-green:#83c269;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:"Geist",system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;overflow:hidden}
+  .mono{font-family:"Geist Mono",ui-monospace,monospace}
+  .canvas{position:fixed;inset:0;background:radial-gradient(circle, var(--dot) 1.3px, transparent 1.6px);background-size:26px 26px}
+  .di{display:inline-block;width:var(--s,20px);height:var(--s,20px);background:currentColor;flex:none;-webkit-mask:var(--m) no-repeat center/contain;mask:var(--m) no-repeat center/contain}
+
+  .topbar{position:fixed;left:12px;right:12px;top:12px;height:50px;z-index:30;display:flex;align-items:center;gap:14px;padding:0 14px;background:var(--card);border:1.5px solid var(--line)}
+  .wordmark{font-weight:800;letter-spacing:-0.02em;font-size:16px}
+  .sep{width:1.5px;height:22px;background:var(--line)}
+  .seg{display:flex;align-items:center;border:1.5px solid var(--line)}
+  .seg button{height:30px;padding:0 12px;background:none;border:none;font:inherit;font-size:12.5px;font-weight:500;color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:7px}
+  .seg button:hover{background:var(--ink);color:var(--bg)}
+  .ib{width:32px;height:32px;display:grid;place-items:center;background:none;border:1.5px solid var(--line);color:var(--ink);cursor:pointer}
+  .ib:hover{background:var(--ink);color:var(--bg)}
+  .status{margin-left:auto;font-size:11px;color:var(--ink-3);font-weight:500;letter-spacing:0.03em}
+
+  .rail{position:fixed;left:12px;top:78px;z-index:20;display:flex;flex-direction:column;background:var(--card);border:1.5px solid var(--line)}
+  .rail button{width:46px;height:46px;display:grid;place-items:center;background:none;border:none;color:var(--ink);cursor:pointer}
+  .rail button + button{border-top:1.5px solid var(--line)}
+  .rail button:hover{background:var(--fill)}
+  .rail button.active{background:var(--ink);color:var(--bg)}
+
+  .node{position:absolute;background:var(--card);border:1.5px solid var(--line);box-shadow:4px 4px 0 0 var(--shadow)}
+  .node.sel{box-shadow:5px 5px 0 0 var(--shadow);outline:1.5px solid var(--ink);outline-offset:2px}
+  .kind{font-family:"Geist Mono";font-size:9.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-2);font-weight:600}
+  .chip{font-family:"Geist Mono";font-size:9.5px;font-weight:700;padding:1px 5px;border:1.5px solid var(--line)}
+  .nlabel{font-size:14px;font-weight:700;letter-spacing:-0.01em}
+  .doc{width:240px;padding:13px 14px}
+  .doc .row{display:flex;align-items:center;gap:11px}
+  .doc .ic{width:38px;height:38px;display:grid;place-items:center;border:1.5px solid var(--line);color:var(--ink)}
+  .doc .meta{font-family:"Geist Mono";font-size:10px;color:var(--ink-3);margin-top:3px;font-weight:500}
+  .concept{width:188px;padding:11px 13px}
+  .concept .top{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .concept .dot{width:8px;height:8px;background:var(--ink)}
+  .concept .chip{margin-left:auto}
+  .note{width:228px;padding:13px 14px}
+  .note .ttl{font-size:12.5px;font-weight:700;margin-bottom:7px}
+  .note p{font-size:12px;line-height:1.5;color:var(--ink-2)}
+  .sticky{position:absolute;width:172px;height:118px;padding:13px;background:var(--hl-amber);border:1.5px solid #0e0e10;box-shadow:4px 4px 0 0 var(--shadow)}
+  .sticky .t{font-size:12px;line-height:1.45;color:#1a1305;font-weight:500}
+
+  .edges{position:absolute;inset:0;pointer-events:none;overflow:visible}
+  .edges path{fill:none;stroke:var(--ink-2);stroke-width:1.7}
+  .edges path.dash{stroke-dasharray:5 4;stroke:var(--ink)}
+  .elabel{font-family:"Geist Mono";font-size:9.5px;font-weight:600;fill:var(--ink-2)}
+
+  .prompt{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:20;width:min(560px,calc(100vw - 24px));display:flex;align-items:center;gap:11px;padding:8px 8px 8px 15px;background:var(--card);border:1.5px solid var(--line);box-shadow:5px 5px 0 0 var(--shadow)}
+  .prompt .ph{flex:1;font-size:13.5px;color:var(--ink-3);font-weight:500}
+  .prompt .go{height:34px;padding:0 18px;background:var(--ink);color:var(--bg);font:inherit;font-size:12.5px;font-weight:700;border:none;cursor:pointer}
+
+  .detail{position:fixed;right:12px;top:78px;bottom:18px;width:332px;z-index:20;background:var(--card);border:1.5px solid var(--line);box-shadow:5px 5px 0 0 var(--shadow);display:flex;flex-direction:column}
+  .detail .hd{position:relative;padding:18px 18px 15px;border-bottom:1.5px solid var(--line)}
+  .detail h2{font-size:21px;font-weight:800;letter-spacing:-0.025em;margin-top:6px}
+  .detail .cl{position:absolute;right:13px;top:15px;width:28px;height:28px;display:grid;place-items:center;border:1.5px solid var(--line);background:none;color:var(--ink);cursor:pointer}
+  .detail .body{padding:16px 18px;overflow:auto}
+  .detail .sum{font-size:13px;line-height:1.55;color:var(--ink-2);margin-bottom:18px}
+  .src{border:1.5px solid var(--line);padding:14px}
+  .src .lh{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .src .lab{font-family:"Geist Mono";font-size:9.5px;letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+  .src .tag{display:flex;align-items:center;gap:5px;font-family:"Geist Mono";font-size:9.5px;font-weight:700;padding:2px 8px;background:var(--ink);color:var(--bg)}
+  .src .loc{font-family:"Geist Mono";font-size:10px;color:var(--ink-3);margin-bottom:11px;font-weight:500}
+  .src blockquote{font-size:13px;line-height:1.5;color:var(--ink-2);font-style:italic;padding-left:12px;border-left:2.5px solid var(--ink)}
+  .src mark{background:var(--hl-amber);color:#1a1305;padding:0 2px}
+  .corner{position:fixed;right:12px;bottom:18px;z-index:20;display:flex;background:var(--card);border:1.5px solid var(--line)}
+  .corner button{width:32px;height:32px;display:grid;place-items:center;border:none;background:none;color:var(--ink);cursor:pointer}
+  .corner button+button{border-left:1.5px solid var(--line)}
+  .tag-name{position:fixed;left:14px;bottom:20px;font-family:"Geist Mono";font-size:10px;color:var(--ink-3);letter-spacing:0.05em;font-weight:600}
+</style>
+</head>
+<body>
+<div class="canvas"></div>
+<svg class="edges">
+  <path class="dash" d="M198,134 C 248,186 230,214 218,256"/>
+  <path d="M300,306 C 360,326 410,326 452,328"/>
+  <path d="M250,306 C 250,366 280,406 300,436"/>
+  <text class="elabel" x="360" y="318">supplies</text>
+</svg>
+
+<div class="topbar">
+  <span class="wordmark">Miro·AI</span>
+  <span class="sep"></span>
+  <div class="seg"><button>Photosynthesis ▾</button></div>
+  <button class="ib" title="New board"><span class="di" style="--s:18px;--m:url(icons/new.svg)"></span></button>
+  <button class="ib" title="Documents"><span class="di" style="--s:18px;--m:url(icons/docs.svg)"></span></button>
+  <div class="seg"><button><span class="di" style="--s:15px;--m:url(icons/lens.svg)"></span> Normal ▾</button></div>
+  <span class="status mono">24 DOCS · GEMINI · DETAIL</span>
+  <button class="ib" title="Theme"><span class="di" style="--s:18px;--m:url(icons/moon.svg)"></span></button>
+  <button class="ib" title="Command"><span class="di" style="--s:18px;--m:url(icons/command.svg)"></span></button>
+</div>
+
+<div class="rail">
+  <button class="active" title="Add document"><span class="di" style="--s:23px;--m:url(icons/upload.svg)"></span></button>
+  <button title="Text"><span class="di" style="--s:23px;--m:url(icons/text.svg)"></span></button>
+  <button title="Concept"><span class="di" style="--s:23px;--m:url(icons/concept.svg)"></span></button>
+  <button title="Sticky"><span class="di" style="--s:23px;--m:url(icons/sticky.svg)"></span></button>
+  <button title="Rectangle"><span class="di" style="--s:23px;--m:url(icons/rect.svg)"></span></button>
+  <button title="Ellipse"><span class="di" style="--s:23px;--m:url(icons/ellipse.svg)"></span></button>
+  <button title="Diamond"><span class="di" style="--s:23px;--m:url(icons/diamond.svg)"></span></button>
+  <button title="Code"><span class="di" style="--s:23px;--m:url(icons/code.svg)"></span></button>
+</div>
+
+<div class="node doc" style="left:78px;top:64px">
+  <div class="row">
+    <div class="ic"><span class="di" style="--s:20px;--m:url(icons/upload.svg)"></span></div>
+    <div><div class="nlabel">biology-ch3.pdf</div><div class="meta">5 CONCEPTS · 24 PAGES</div></div>
+  </div>
+</div>
+<div class="node concept sel" style="left:150px;top:214px">
+  <div class="top"><span class="dot"></span><span class="kind">process</span><span class="chip">p3</span></div>
+  <div class="nlabel">Photosynthesis</div>
+</div>
+<div class="node concept" style="left:452px;top:292px">
+  <div class="top"><span class="dot"></span><span class="kind">process</span><span class="chip">p5</span></div>
+  <div class="nlabel">Calvin cycle</div>
+</div>
+<div class="node concept" style="left:150px;top:414px">
+  <div class="top"><span class="dot"></span><span class="kind">entity</span><span class="chip">p2</span></div>
+  <div class="nlabel">Chlorophyll</div>
+</div>
+<div class="node note" style="left:560px;top:120px">
+  <div class="ttl">One-line summary</div>
+  <p>Light reactions make ATP and NADPH; the Calvin cycle spends them to build sugar.</p>
+</div>
+<div class="sticky" style="left:562px;top:302px"><div class="t">Key idea: light becomes sugar, and every claim cites a page.</div></div>
+
+<div class="prompt">
+  <span class="di" style="--s:19px;--m:url(icons/generate.svg)"></span>
+  <span class="ph">Ask AI anything: table, chart, explanation</span>
+  <button class="go">Generate</button>
+</div>
+
+<div class="detail">
+  <div class="hd">
+    <button class="cl"><span class="di" style="--s:15px;--m:url(icons/close.svg)"></span></button>
+    <div class="kind">process</div>
+    <h2>Photosynthesis</h2>
+  </div>
+  <div class="body">
+    <p class="sum">Plants convert light energy into stored chemical energy as sugars, the base of nearly every food chain.</p>
+    <div class="src">
+      <div class="lh"><span class="lab">Source</span><span class="tag"><span class="di" style="--s:11px;--m:url(icons/check.svg)"></span>VERIFIED</span></div>
+      <div class="loc">p3, chars 120-153</div>
+      <blockquote>The leaf stores sugars after <mark>chlorophyll absorbs light energy</mark> during photosynthesis.</blockquote>
+    </div>
+  </div>
+</div>
+
+<div class="corner">
+  <button title="Zoom out"><span class="di" style="--s:17px;--m:url(icons/zoom-out.svg)"></span></button>
+  <button title="Zoom in"><span class="di" style="--s:17px;--m:url(icons/zoom-in.svg)"></span></button>
+  <button title="Fit"><span class="di" style="--s:17px;--m:url(icons/fit.svg)"></span></button>
+</div>
+<div class="tag-name">B · NOTEBOOK DARK - solid light borders, hard black offset shadows, white doodle icons</div>
+</body>
+</html>

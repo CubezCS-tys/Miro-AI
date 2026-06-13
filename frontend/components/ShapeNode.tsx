@@ -34,17 +34,17 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeType>) {
         isVisible={selected}
         minWidth={80}
         minHeight={60}
-        lineClassName="!border-cyan-400/60"
-        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-cyan-400"
+        lineClassName="!border-accent"
+        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-accent"
       />
-      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
       <div
-        className={`flex h-full w-full items-center justify-center ${shapeClasses} ${colorClasses} ${
+        className={`flex h-full w-full items-center justify-center border-line ${shapeClasses} ${colorClasses} ${
           data.shape === "diamond" ? "[clip-path:polygon(50%_0,100%_50%,50%_100%,0_50%)]" : ""
-        } ${selected ? "shadow-[0_0_24px_rgba(56,189,248,0.2)]" : ""}`}
+        } ${selected ? "ring-2 ring-accent" : ""}`}
       >
         <textarea
-          className={`autosize nodrag max-h-full resize-none bg-transparent text-center text-[13px] font-medium leading-snug text-slate-100 outline-none placeholder:text-slate-500 ${
+          className={`autosize nodrag max-h-full resize-none bg-transparent text-center text-[13px] font-medium leading-snug text-fg outline-none placeholder:text-faint ${
             data.shape === "diamond" ? "max-w-[55%]" : "max-w-[85%]"
           }`}
           value={data.label}
@@ -53,7 +53,7 @@ export function ShapeNode({ id, data, selected }: NodeProps<ShapeNodeType>) {
           onChange={(e) => updateNodeData(id, { label: e.target.value })}
         />
       </div>
-      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
     </div>
   );
 }

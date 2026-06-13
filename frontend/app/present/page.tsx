@@ -46,10 +46,10 @@ export default function PresentPage() {
 
   if (!slide) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#060912] px-6 text-slate-300">
-        <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-          <h1 className="text-lg font-semibold text-slate-100">No presentation loaded</h1>
-          <p className="mt-2 text-sm text-slate-500">
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-6 text-muted">
+        <div className="max-w-md rounded-2xl border border-line bg-surface p-6 text-center">
+          <h1 className="text-lg font-semibold text-fg">No presentation loaded</h1>
+          <p className="mt-2 text-sm text-faint">
             Select grounded concept nodes on the board, then open presentation mode.
           </p>
         </div>
@@ -58,49 +58,49 @@ export default function PresentPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#060912] text-slate-100">
-      <header className="fixed left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/8 bg-[#060912]/90 px-6 py-4 backdrop-blur">
-        <div className="text-sm font-semibold text-cyan-200">Miro-AI presentation</div>
-        <div className="text-xs text-slate-500">{progress}</div>
+    <main className="min-h-screen bg-canvas text-fg">
+      <header className="glass fixed left-0 right-0 top-0 z-10 flex items-center justify-between border-x-0 border-t-0 px-6 py-4">
+        <div className="text-sm font-semibold text-fg">Miro-AI presentation</div>
+        <div className="text-xs text-faint">{progress}</div>
       </header>
 
-      <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-8 py-24">
-        <div className="mb-4 flex items-center gap-2">
-          <span className="rounded bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+      <section className="mx-auto flex min-h-screen max-w-5xl flex-col justify-center px-6 py-24 sm:px-8">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="rounded bg-citation/12 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-citation">
             {slide.kind}
           </span>
-          <span className="rounded bg-white/5 px-2 py-1 text-xs font-semibold text-slate-400">
+          <span className="rounded bg-surface-2 px-2 py-1 text-xs font-semibold text-muted">
             p{page ?? "?"}
           </span>
           {source?.verified === false && (
-            <span className="rounded bg-amber-400/10 px-2 py-1 text-xs font-semibold text-amber-200">
+            <span className="rounded bg-warning/12 px-2 py-1 text-xs font-semibold text-warning">
               needs review
             </span>
           )}
         </div>
-        <h1 className="max-w-4xl text-5xl font-bold leading-tight text-slate-50">
+        <h1 className="max-w-4xl text-4xl font-bold leading-tight text-fg sm:text-5xl">
           {slide.label}
         </h1>
-        <p className="mt-8 max-w-3xl text-xl leading-relaxed text-slate-300">
+        <p className="mt-8 max-w-3xl text-lg leading-relaxed text-muted sm:text-xl">
           {slide.summary}
         </p>
-        <blockquote className="mt-10 max-w-3xl border-l-2 border-cyan-300/50 pl-5 text-base italic leading-relaxed text-slate-400">
+        <blockquote className="mt-10 max-w-3xl border-l-2 border-citation/50 pl-5 text-base italic leading-relaxed text-muted">
           {slide.source_quote || "No source quote attached."}
         </blockquote>
       </section>
 
-      <footer className="fixed bottom-0 left-0 right-0 flex items-center justify-between border-t border-white/8 bg-[#060912]/90 px-6 py-4 backdrop-blur">
+      <footer className="glass fixed bottom-0 left-0 right-0 flex items-center justify-between border-x-0 border-b-0 px-6 py-4">
         <button
           onClick={() => canPrev && setIndex((value) => value - 1)}
           disabled={!canPrev}
-          className="rounded-lg bg-white/5 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg border border-line bg-surface px-4 py-2 text-sm text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Previous
         </button>
         <button
           onClick={() => canNext && setIndex((value) => value + 1)}
           disabled={!canNext}
-          className="rounded-lg bg-white/5 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next
         </button>
