@@ -1133,6 +1133,14 @@ function BoardInner() {
           >
             Docs
           </button>
+          <a
+            href="/settings"
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            Settings
+          </a>
           <select
             value={lensMode}
             onChange={(e) => setLensMode(e.target.value as LensMode)}

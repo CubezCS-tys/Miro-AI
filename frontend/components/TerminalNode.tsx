@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import {
@@ -12,6 +18,10 @@ import {
 } from "@xyflow/react";
 
 import { getConfig, terminalWebSocketUrl } from "@/lib/api";
+import {
+  hostTerminalConsent,
+  subscribeHostTerminalConsent,
+} from "@/lib/terminal-preferences";
 
 type TerminalStatus =
   | "checking"
@@ -33,9 +43,25 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
   const fitRef = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const statusRef = useRef<TerminalStatus>("checking");
-  const [enabled, setEnabled] = useState(false);
+  const [backendState, setBackendState] = useState<
+    "checking" | "enabled" | "disabled" | "unavailable"
+  >("checking");
+  const consented = useSyncExternalStore(
+    subscribeHostTerminalConsent,
+    hostTerminalConsent,
+    () => false,
+  );
   const [status, setStatus] = useState<TerminalStatus>("checking");
   const [detail, setDetail] = useState("Checking backend policy");
+  const enabled = backendState === "enabled" && consented;
+  const disabledDetail =
+    backendState === "checking"
+      ? "Checking backend policy"
+      : backendState === "unavailable"
+        ? "Backend config unavailable"
+        : backendState === "disabled"
+          ? "Host terminal locked by backend policy"
+          : "Enable host terminal in Settings";
 
   const setStatusValue = useCallback((next: TerminalStatus) => {
     statusRef.current = next;
@@ -59,20 +85,40 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
     void getConfig()
       .then((config) => {
         const allowed = config.host_terminal_enabled;
-        setEnabled(allowed);
-        setStatusValue(allowed ? "idle" : "disabled");
-        setDetail(
-          allowed
-            ? "Ready"
-            : "Host terminal locked by backend policy",
-        );
+        setBackendState(allowed ? "enabled" : "disabled");
       })
       .catch(() => {
-        setEnabled(false);
-        setStatusValue("disabled");
-        setDetail("Backend config unavailable");
+        setBackendState("unavailable");
       });
-  }, [setStatusValue]);
+  }, []);
+
+  useEffect(() => {
+    if (backendState === "checking") return;
+
+    if (enabled) {
+      if (
+        statusRef.current === "checking" ||
+        statusRef.current === "disabled"
+      ) {
+        queueMicrotask(() => {
+          setStatusValue("idle");
+          setDetail("Ready");
+        });
+      }
+      return;
+    }
+
+    const socket = socketRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "kill" }));
+    }
+    socket?.close();
+    socketRef.current = null;
+    queueMicrotask(() => {
+      setStatusValue("disabled");
+      setDetail(disabledDetail);
+    });
+  }, [backendState, disabledDetail, enabled, setStatusValue]);
 
   useEffect(() => {
     if (!containerRef.current || terminalRef.current) return;
@@ -139,7 +185,7 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
     if (!term) return;
     if (!enabled) {
       setStatusValue("disabled");
-      setDetail("Host terminal locked by backend policy");
+      setDetail(disabledDetail);
       return;
     }
     const existing = socketRef.current;
@@ -152,7 +198,9 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
 
     setStatusValue("connecting");
     setDetail("Connecting");
-    const socket = new WebSocket(terminalWebSocketUrl(term.cols || 80, term.rows || 24));
+    const socket = new WebSocket(
+      terminalWebSocketUrl(term.cols || 80, term.rows || 24),
+    );
     socketRef.current = socket;
 
     socket.onopen = sendResize;
@@ -203,7 +251,7 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
         setDetail("Session closed");
       }
     };
-  }, [enabled, sendResize, setStatusValue]);
+  }, [disabledDetail, enabled, sendResize, setStatusValue]);
 
   const disconnect = useCallback(() => {
     const socket = socketRef.current;
@@ -213,8 +261,8 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
     socket?.close();
     socketRef.current = null;
     setStatusValue(enabled ? "closed" : "disabled");
-    setDetail(enabled ? "Session closed" : "Host terminal locked by backend policy");
-  }, [enabled, setStatusValue]);
+    setDetail(enabled ? "Session closed" : disabledDetail);
+  }, [disabledDetail, enabled, setStatusValue]);
 
   const clear = useCallback(() => {
     terminalRef.current?.clear();
@@ -273,7 +321,7 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
         <div ref={containerRef} className="h-full w-full p-2" />
         {status === "disabled" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35 px-6 text-center text-sm font-medium text-slate-400">
-            Host terminal locked by backend policy
+            {disabledDetail}
           </div>
         )}
       </div>

@@ -313,9 +313,51 @@ test("terminal node renders disabled backend policy state", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Connect" })).toBeDisabled();
 });
 
+test("settings page controls host terminal browser consent", async ({ page }) => {
+  await page.route("**/config", (route) =>
+    route.fulfill({
+      json: {
+        server_execution_enabled: false,
+        host_terminal_enabled: true,
+        terminal_runtime: "host",
+        live_research_enabled: false,
+        max_upload_bytes: 26214400,
+        max_prompt_chars: 12000,
+        max_code_chars: 20000,
+        provider: "mock",
+        quality_model: "gemini-3.1-pro-preview",
+        light_model: "gemini-3.1-flash-lite",
+        privacy_boundary: "Mock privacy boundary",
+      },
+    }),
+  );
+
+  await page.goto("/settings");
+
+  await expect(page.getByRole("heading", { name: "Runtime controls" })).toBeVisible();
+  const toggle = page.getByRole("checkbox", { name: "Host terminal" });
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).not.toBeChecked();
+
+  await toggle.check();
+
+  await expect(toggle).toBeChecked();
+  await expect(page.getByText("Enabled on this browser")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.localStorage.getItem("miro-ai-host-terminal-consent"),
+      ),
+    )
+    .toBe("true");
+});
+
 test("terminal node connects to mocked websocket runtime", async ({ page }) => {
   const received: string[] = [];
   let terminalInput = "";
+  await page.addInitScript(() => {
+    localStorage.setItem("miro-ai-host-terminal-consent", "true");
+  });
   await page.routeWebSocket("ws://localhost:8000/terminal/sessions*", (ws) => {
     let readySent = false;
     const sendReady = () => {
