@@ -108,9 +108,17 @@ def generate_json(
 
     try:
         result = _provider_generate(PROVIDER, task, prompt, schema, model)
-    except LLMError:
+    except LLMError as primary_error:
         if FALLBACK_PROVIDER and FALLBACK_PROVIDER != PROVIDER:
-            result = _provider_generate(FALLBACK_PROVIDER, task, prompt, schema, model)
+            try:
+                result = _provider_generate(
+                    FALLBACK_PROVIDER, task, prompt, schema, model
+                )
+            except LLMError as fallback_error:
+                raise LLMError(
+                    f"{PROVIDER} failed: {primary_error}. "
+                    f"{FALLBACK_PROVIDER} fallback failed: {fallback_error}"
+                ) from fallback_error
         else:
             raise
 

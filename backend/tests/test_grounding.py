@@ -105,6 +105,35 @@ def test_tutor_uses_mock_provider_without_keys(tmp_path, monkeypatch):
     assert body["weak_links"]
 
 
+def test_llm_fallback_error_keeps_primary_reason(monkeypatch):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.modules.pop("services.llm", None)
+    from services import llm
+
+    monkeypatch.setattr(llm, "PROVIDER", "gemini")
+    monkeypatch.setattr(llm, "FALLBACK_PROVIDER", "anthropic")
+    monkeypatch.setattr(llm, "CACHE_ENABLED", False)
+
+    def fail(provider, task, prompt, schema, model):
+        raise llm.LLMError(f"{provider} unavailable")
+
+    monkeypatch.setattr(llm, "_provider_generate", fail)
+
+    try:
+        llm.generate_json(
+            task="test",
+            prompt="{}",
+            schema={"type": "object"},
+        )
+    except llm.LLMError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected LLMError")
+
+    assert "gemini failed: gemini unavailable" in message
+    assert "anthropic fallback failed: anthropic unavailable" in message
+
+
 def test_init_db_migrates_old_board_schema(tmp_path, monkeypatch):
     db_path = tmp_path / "old.db"
     with sqlite3.connect(db_path) as conn:
