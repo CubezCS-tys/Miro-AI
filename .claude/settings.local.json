@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -c \"import main; print\\('OK'\\)\")",
+      "Bash(fuser -k 8000/tcp)",
+      "Bash(nohup .venv/bin/uvicorn main:app --port 8000)",
+      "Bash(curl -s http://localhost:8000/board)"
+    ]
+  }
+}

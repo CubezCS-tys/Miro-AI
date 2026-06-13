@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+miro_ai.db
+uploads/
+.env
