@@ -5,68 +5,40 @@ import type { GraphNode } from "@/lib/types";
 
 export type KnowledgeNodeType = Node<{ concept: GraphNode }, "knowledge">;
 
-const kindAccents: Record<
-  string,
-  { border: string; glow: string; dot: string; text: string }
-> = {
-  concept: {
-    border: "border-cyan-400/40",
-    glow: "hover:shadow-[0_0_24px_rgba(34,211,238,0.25)]",
-    dot: "bg-cyan-400",
-    text: "text-cyan-300",
-  },
-  process: {
-    border: "border-emerald-400/40",
-    glow: "hover:shadow-[0_0_24px_rgba(52,211,153,0.25)]",
-    dot: "bg-emerald-400",
-    text: "text-emerald-300",
-  },
-  entity: {
-    border: "border-amber-400/40",
-    glow: "hover:shadow-[0_0_24px_rgba(251,191,36,0.25)]",
-    dot: "bg-amber-400",
-    text: "text-amber-300",
-  },
-  formula: {
-    border: "border-violet-400/40",
-    glow: "hover:shadow-[0_0_24px_rgba(167,139,250,0.3)]",
-    dot: "bg-violet-400",
-    text: "text-violet-300",
-  },
-};
+const handleClass = "!h-1.5 !w-1.5 !border-0 !bg-faint";
 
 export function KnowledgeNode({ data, selected }: NodeProps<KnowledgeNodeType>) {
   const { concept } = data;
-  const accent = kindAccents[concept.kind] ?? kindAccents.concept;
+  const source = concept.source_span;
+  const page = source?.page ?? concept.source_page;
+  const verified = source?.verified ?? false;
   return (
     <div
-      className={`node-enter glass w-[200px] cursor-pointer rounded-xl border px-3.5 py-2.5 transition-all duration-200 ${accent.border} ${accent.glow} ${
-        selected
-          ? "shadow-[0_0_32px_rgba(56,189,248,0.35)] ring-1 ring-cyan-300/60"
-          : ""
+      className={`node-enter node-surface w-[200px] cursor-pointer px-3.5 py-2.5 ${
+        selected ? "ring-2 ring-accent" : ""
       }`}
     >
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
-      />
+      <Handle type="target" position={Position.Top} className={handleClass} />
       <div className="mb-1 flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 rounded-full ${accent.dot}`} />
-        <span
-          className={`text-[9px] font-medium uppercase tracking-[0.14em] ${accent.text}`}
-        >
+        <span className="h-1.5 w-1.5 bg-fg" />
+        <span className="font-mono text-[9px] font-medium uppercase tracking-[0.16em] text-muted">
           {concept.kind}
         </span>
+        {page && (
+          <span
+            className={`source-chip ml-auto border px-1.5 py-0.5 font-mono text-[9px] font-semibold text-muted ${
+              verified ? "border-line" : "border-dashed border-line"
+            }`}
+            title={verified ? "Verified source page" : "Quote needs review"}
+          >
+            p{page}
+          </span>
+        )}
       </div>
-      <div className="text-[13px] font-semibold leading-snug text-slate-100">
+      <div className="text-[13px] font-semibold leading-snug text-fg">
         {concept.label}
       </div>
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
-      />
+      <Handle type="source" position={Position.Bottom} className={handleClass} />
     </div>
   );
 }

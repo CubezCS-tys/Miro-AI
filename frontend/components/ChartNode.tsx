@@ -22,17 +22,17 @@ import type { Artifact } from "@/lib/types";
 
 export type ChartNodeType = Node<{ artifact: Artifact }, "chart">;
 
-const PALETTE = ["#22d3ee", "#a78bfa", "#34d399", "#fbbf24", "#fb7185", "#60a5fa"];
+const PALETTE = ["#8f8f88", "#b2b2ab", "#6e6e67", "#a0a09a", "#7c7c75", "#c2c2bb"];
 
-const axisStyle = { fontSize: 10, fill: "#64748b" };
+const axisStyle = { fontSize: 10, fill: "#8a8a85" };
 const tooltipStyle = {
   contentStyle: {
-    background: "rgba(13,18,32,0.95)",
-    border: "1px solid rgba(148,163,184,0.2)",
-    borderRadius: 8,
+    background: "#1a1a1c",
+    border: "1.5px solid rgba(243,243,241,0.4)",
+    borderRadius: 0,
     fontSize: 12,
   },
-  labelStyle: { color: "#e2e8f0" },
+  labelStyle: { color: "#f3f3f1" },
 };
 
 export function ChartNode({ data, selected }: NodeProps<ChartNodeType>) {
@@ -94,20 +94,20 @@ export function ChartNode({ data, selected }: NodeProps<ChartNodeType>) {
 
   return (
     <div
-      className={`node-enter glass rounded-2xl border border-violet-400/25 p-4 shadow-[0_0_24px_rgba(167,139,250,0.08)] ${
-        selected ? "ring-1 ring-violet-300/60" : ""
+      className={`node-enter node-surface rounded-2xl p-4 ${
+        selected ? "!border-accent ring-1 ring-accent" : ""
       }`}
     >
-      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
-      <div className="mb-1 text-[13px] font-semibold text-slate-100">{title}</div>
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
+      <div className="mb-1 text-[13px] font-semibold text-fg">{title}</div>
       {chart.y_label && (
-        <div className="mb-2 text-[10px] uppercase tracking-wide text-slate-500">
+        <div className="mb-2 text-[10px] uppercase tracking-wide text-faint">
           {chart.y_label}
           {chart.x_label ? ` · by ${chart.x_label}` : ""}
         </div>
       )}
       {body}
-      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
     </div>
   );
 }

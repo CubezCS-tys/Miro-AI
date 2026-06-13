@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body{background:#fff;margin:0;padding:30px;font-family:monospace}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:20px}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .big{display:inline-block;width:44px;height:44px;background:#0a0a0a;
+    -webkit-mask:var(--m) no-repeat center/contain;mask:var(--m) no-repeat center/contain}
+  .sm{display:inline-block;width:20px;height:20px;background:#0a0a0a;
+    -webkit-mask:var(--m) no-repeat center/contain;mask:var(--m) no-repeat center/contain}
+  .lbl{font-size:10px;color:#555}
+  .row{display:flex;align-items:center;gap:10px}
+</style></head><body>
+<div class="grid" id="g"></div>
+<script>
+  const names=["upload","text","concept","sticky","rect","ellipse","diamond","code","new","docs","lens","sun","moon","command","generate","close","trash","copy","zoom-in","zoom-out","fit","prev","next","check","link","star","book"];
+  const g=document.getElementById("g");
+  for(const n of names){
+    const c=document.createElement("div");c.className="cell";
+    c.innerHTML=`<div class="row"><span class="big" style="--m:url(icons/${n}.svg)"></span><span class="sm" style="--m:url(icons/${n}.svg)"></span></div><div class="lbl">${n}</div>`;
+    g.appendChild(c);
+  }
+</script>
+</body></html>

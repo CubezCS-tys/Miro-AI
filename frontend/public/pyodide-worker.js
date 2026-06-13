@@ -30,7 +30,7 @@ self.onmessage = async (event) => {
     // auto-fetch packages referenced by imports (numpy, pandas, ...)
     try {
       await py.loadPackagesFromImports(code);
-    } catch (_) {
+    } catch {
       /* unknown imports fail in the run below with a normal Python error */
     }
 

@@ -1,0 +1,39 @@
+[
+  {
+    "name": "grounded-citations",
+    "expected_page": 1,
+    "expected_quote_contains": "Grounded citations make the graph trustworthy",
+    "pages": [
+      {
+        "page": 1,
+        "text": "Grounded citations make the graph trustworthy because every concept can be checked against a source page."
+      },
+      {
+        "page": 2,
+        "text": "A second page should not be selected for the first mocked concept."
+      }
+    ]
+  },
+  {
+    "name": "causal-map",
+    "expected_page": 1,
+    "expected_quote_contains": "Causal maps expose how one event changes another",
+    "pages": [
+      {
+        "page": 1,
+        "text": "Causal maps expose how one event changes another and help readers test whether an edge is justified."
+      }
+    ]
+  },
+  {
+    "name": "proof-region",
+    "expected_page": 1,
+    "expected_quote_contains": "Proof regions should identify assumptions",
+    "pages": [
+      {
+        "page": 1,
+        "text": "Proof regions should identify assumptions before deriving conclusions from a chain of claims."
+      }
+    ]
+  }
+]

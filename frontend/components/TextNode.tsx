@@ -10,16 +10,16 @@ export function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
   return (
     <div
       className={`node-enter rounded-lg px-1 py-0.5 transition-shadow ${
-        selected ? "ring-1 ring-cyan-300/60" : ""
+        selected ? "ring-1 ring-accent" : ""
       }`}
     >
       <Handle
         type="target"
         position={Position.Left}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
+        className="!h-1.5 !w-1.5 !border-0 !bg-faint"
       />
       <textarea
-        className="autosize nodrag block min-h-[28px] min-w-[160px] resize-none bg-transparent text-sm leading-relaxed text-slate-200 outline-none placeholder:text-slate-600"
+        className="autosize nodrag block min-h-[28px] min-w-[160px] resize-none bg-transparent text-sm leading-relaxed text-fg outline-none placeholder:text-faint"
         value={data.text}
         placeholder="Type something…"
         autoFocus={data.text === ""}
@@ -28,7 +28,7 @@ export function TextNode({ id, data, selected }: NodeProps<TextNodeType>) {
       <Handle
         type="source"
         position={Position.Right}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
+        className="!h-1.5 !w-1.5 !border-0 !bg-faint"
       />
     </div>
   );
