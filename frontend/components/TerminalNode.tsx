@@ -131,26 +131,26 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
       fontSize: 12,
       scrollback: 1200,
       theme: {
-        background: "#020617",
-        black: "#020617",
-        blue: "#38bdf8",
-        brightBlack: "#475569",
-        brightBlue: "#7dd3fc",
-        brightCyan: "#67e8f9",
-        brightGreen: "#86efac",
-        brightMagenta: "#c4b5fd",
-        brightRed: "#fda4af",
-        brightWhite: "#f8fafc",
-        brightYellow: "#fde68a",
-        cursor: "#e2e8f0",
-        cyan: "#22d3ee",
-        foreground: "#dbeafe",
-        green: "#34d399",
-        magenta: "#a78bfa",
-        red: "#fb7185",
+        background: "#0b0b0d",
+        black: "#0b0b0d",
+        blue: "#d8d8d4",
+        brightBlack: "#6f6f69",
+        brightBlue: "#ffffff",
+        brightCyan: "#ffffff",
+        brightGreen: "#ffffff",
+        brightMagenta: "#ffffff",
+        brightRed: "#ffffff",
+        brightWhite: "#ffffff",
+        brightYellow: "#ffffff",
+        cursor: "#f3f3f1",
+        cyan: "#d8d8d4",
+        foreground: "#f3f3f1",
+        green: "#d8d8d4",
+        magenta: "#d8d8d4",
+        red: "#d8d8d4",
         selectionBackground: "#1e293b",
-        white: "#e2e8f0",
-        yellow: "#fbbf24",
+        white: "#f3f3f1",
+        yellow: "#d8d8d4",
       },
     });
     const fit = new FitAddon();
@@ -272,55 +272,55 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
 
   return (
     <div
-      className={`glass flex h-full w-full flex-col overflow-hidden rounded-2xl border border-sky-400/25 ${
-        selected ? "shadow-[0_0_28px_rgba(56,189,248,0.18)]" : ""
+      className={`glass flex h-full w-full flex-col overflow-hidden rounded-xl ${
+        selected ? "shadow-[var(--shadow-node)]" : ""
       }`}
     >
       <NodeResizer
         isVisible={selected}
         minWidth={380}
         minHeight={260}
-        lineClassName="!border-sky-400/60"
-        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-sky-400"
+        lineClassName="!border-line-strong"
+        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-fg"
       />
       <Handle
         type="target"
         position={Position.Top}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
+        className="!h-1.5 !w-1.5 !border-0 !bg-fg"
       />
-      <div className="flex shrink-0 cursor-grab items-center gap-2 border-b border-white/8 px-3 py-2 active:cursor-grabbing">
+      <div className="flex shrink-0 cursor-grab items-center gap-2 border-b border-line px-3 py-2 active:cursor-grabbing">
         <span className="flex gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full border border-line bg-surface" />
+          <span className="h-2.5 w-2.5 rounded-full border border-line bg-surface-2" />
+          <span className="h-2.5 w-2.5 rounded-full border border-line bg-faint" />
         </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300/90">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
           {data.title ?? "Terminal"}
         </span>
-        <span className="rounded-md bg-white/5 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+        <span className="rounded-md border border-line bg-surface-2 px-2 py-0.5 font-mono text-[10px] text-muted">
           {status}
         </span>
-        <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-slate-500">
+        <span className="pointer-events-none min-w-0 flex-1 truncate font-mono text-[10px] text-faint">
           {detail}
         </span>
         <button
           onClick={clear}
-          className="nodrag rounded-lg bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          className="nodrag rounded-lg border border-line px-2.5 py-1 text-[11px] font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-fg"
         >
           Clear
         </button>
         <button
           onClick={connected ? disconnect : connect}
           disabled={status === "checking" || status === "disabled"}
-          className="nodrag rounded-lg bg-sky-500/20 px-3 py-1 text-[11px] font-semibold text-sky-100 ring-1 ring-sky-400/40 transition-all hover:bg-sky-500/30 disabled:cursor-not-allowed disabled:opacity-45"
+          className="nodrag rounded-lg bg-accent px-3 py-1 text-[11px] font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
         >
           {connected ? "Disconnect" : "Connect"}
         </button>
       </div>
-      <div className="nodrag nowheel relative min-h-0 flex-1 bg-[#020617]">
+      <div className="nodrag nowheel relative min-h-0 flex-1 bg-[#0b0b0d]">
         <div ref={containerRef} className="h-full w-full p-2" />
         {status === "disabled" && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/35 px-6 text-center text-sm font-medium text-slate-400">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/60 px-6 text-center text-sm font-medium text-white/70">
             {disabledDetail}
           </div>
         )}
@@ -328,7 +328,7 @@ export function TerminalNode({ data, selected }: NodeProps<TerminalNodeType>) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!h-1.5 !w-1.5 !border-0 !bg-slate-500"
+        className="!h-1.5 !w-1.5 !border-0 !bg-fg"
       />
     </div>
   );
