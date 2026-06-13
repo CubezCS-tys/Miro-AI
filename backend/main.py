@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import os
@@ -6,7 +7,7 @@ import sys
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -18,6 +19,12 @@ from services.frontier import build_mock_frontier
 from services.graph_extractor import extract_graph
 from services.llm import LIGHT_MODEL, PROVIDER, QUALITY_MODEL
 from services.pdf_parser import extract_document
+from services.terminal import (
+    TerminalError,
+    TerminalManager,
+    terminal_available,
+    terminal_settings_from_env,
+)
 from services.tutor import generate_tutor
 
 
@@ -28,17 +35,36 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def env_csv(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    value = os.environ.get(name)
+    if not value:
+        return default
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
 MAX_UPLOAD_BYTES = int(os.environ.get("MIRO_AI_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
 MAX_PROMPT_CHARS = int(os.environ.get("MIRO_AI_MAX_PROMPT_CHARS", "12000"))
 MAX_CODE_CHARS = int(os.environ.get("MIRO_AI_MAX_CODE_CHARS", "20000"))
 SERVER_EXECUTION_ENABLED = env_bool("MIRO_AI_ENABLE_SERVER_EXECUTION", False)
 LIVE_RESEARCH_ENABLED = env_bool("MIRO_AI_ENABLE_LIVE_RESEARCH", False)
+HOST_TERMINAL_ENABLED = env_bool("MIRO_AI_ENABLE_HOST_TERMINAL", False)
+TERMINAL_SETTINGS = terminal_settings_from_env()
+TERMINAL_MANAGER = TerminalManager(TERMINAL_SETTINGS)
+ALLOWED_ORIGINS = env_csv(
+    "MIRO_AI_ALLOWED_ORIGINS",
+    (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ),
+)
 
 app = FastAPI(title="Miro-AI")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=list(ALLOWED_ORIGINS),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -57,6 +83,8 @@ async def get_config():
         "quality_model": QUALITY_MODEL,
         "light_model": LIGHT_MODEL,
         "live_research_enabled": LIVE_RESEARCH_ENABLED,
+        "host_terminal_enabled": HOST_TERMINAL_ENABLED,
+        "terminal_runtime": "host" if HOST_TERMINAL_ENABLED else "disabled",
         "privacy_boundary": (
             "Uploaded PDFs are stored by this local backend and sent to the "
             "configured AI provider only when you request AI analysis."
@@ -237,6 +265,138 @@ async def execute_code(body: ExecuteRequest):
             }
 
     return await run_in_threadpool(run)
+
+
+def _query_int(raw: str | None, default: int) -> int:
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+async def _send_terminal_message(
+    websocket: WebSocket,
+    send_lock: asyncio.Lock,
+    message: dict,
+) -> None:
+    async with send_lock:
+        try:
+            await websocket.send_json(message)
+        except RuntimeError:
+            pass
+
+
+@app.websocket("/terminal/sessions")
+async def terminal_session(websocket: WebSocket):
+    if not HOST_TERMINAL_ENABLED:
+        await websocket.close(code=1008, reason="Host terminal is disabled")
+        return
+    origin = websocket.headers.get("origin")
+    if origin and origin not in ALLOWED_ORIGINS:
+        await websocket.close(code=1008, reason="Origin is not allowed")
+        return
+
+    await websocket.accept()
+    cols = _query_int(websocket.query_params.get("cols"), 80)
+    rows = _query_int(websocket.query_params.get("rows"), 24)
+    send_lock = asyncio.Lock()
+
+    try:
+        session = await TERMINAL_MANAGER.create(cols, rows)
+    except TerminalError as e:
+        await websocket.send_json({"type": "error", "message": str(e)})
+        await websocket.close(code=1011)
+        return
+
+    async def pump_output() -> None:
+        try:
+            async for chunk in session.output():
+                if session.output_bytes > TERMINAL_SETTINGS.max_output_bytes:
+                    await _send_terminal_message(
+                        websocket,
+                        send_lock,
+                        {
+                            "type": "error",
+                            "message": (
+                                "Terminal output limit exceeded. "
+                                "The session was stopped."
+                            ),
+                        },
+                    )
+                    session.terminate()
+                    break
+                await _send_terminal_message(
+                    websocket,
+                    send_lock,
+                    {"type": "output", "data": chunk},
+                )
+        finally:
+            await _send_terminal_message(
+                websocket,
+                send_lock,
+                {"type": "exit", "exit_code": session.process.poll()},
+            )
+            try:
+                await websocket.close()
+            except RuntimeError:
+                pass
+
+    output_task: asyncio.Task | None = None
+    try:
+        await _send_terminal_message(
+            websocket,
+            send_lock,
+            {
+                "type": "ready",
+                "session_id": session.id,
+                "cwd": session.cwd.name,
+                "shell": session.shell,
+            },
+        )
+        output_task = asyncio.create_task(pump_output())
+        while session.is_running():
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=1,
+                )
+            except TimeoutError:
+                if session.idle_seconds() > TERMINAL_SETTINGS.idle_timeout_seconds:
+                    await _send_terminal_message(
+                        websocket,
+                        send_lock,
+                        {
+                            "type": "error",
+                            "message": "Terminal session timed out from inactivity.",
+                        },
+                    )
+                    break
+                continue
+            msg_type = message.get("type")
+            if msg_type == "input":
+                session.write(
+                    str(message.get("data", "")),
+                    TERMINAL_SETTINGS.max_input_bytes,
+                )
+            elif msg_type == "resize":
+                session.resize(
+                    _query_int(message.get("cols"), 80),
+                    _query_int(message.get("rows"), 24),
+                )
+            elif msg_type == "kill":
+                break
+    except (WebSocketDisconnect, TerminalError):
+        pass
+    finally:
+        await TERMINAL_MANAGER.remove(session.id)
+        if output_task:
+            output_task.cancel()
+            try:
+                await output_task
+            except asyncio.CancelledError:
+                pass
 
 
 class GenerateRequest(BaseModel):

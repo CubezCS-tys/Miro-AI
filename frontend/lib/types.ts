@@ -77,6 +77,8 @@ export interface DocumentPage {
 export interface RuntimeConfig {
   server_execution_enabled: boolean;
   live_research_enabled: boolean;
+  host_terminal_enabled: boolean;
+  terminal_runtime: "disabled" | "host" | string;
   max_upload_bytes: number;
   max_prompt_chars: number;
   max_code_chars: number;

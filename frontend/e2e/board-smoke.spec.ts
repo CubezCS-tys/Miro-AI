@@ -21,6 +21,8 @@ test("board renders grounded source metadata", async ({ page }) => {
     route.fulfill({
       json: {
         server_execution_enabled: false,
+        host_terminal_enabled: false,
+        terminal_runtime: "disabled",
         max_upload_bytes: 26214400,
         max_prompt_chars: 12000,
         max_code_chars: 20000,
@@ -178,6 +180,8 @@ test("frontier proposal can be accepted onto the board", async ({ page }) => {
     route.fulfill({
       json: {
         server_execution_enabled: false,
+        host_terminal_enabled: false,
+        terminal_runtime: "disabled",
         live_research_enabled: false,
         max_upload_bytes: 26214400,
         max_prompt_chars: 12000,
@@ -243,6 +247,174 @@ test("frontier proposal can be accepted onto the board", async ({ page }) => {
   await expect(page.getByText("Frontier Evidence")).toBeVisible();
   await page.getByRole("button", { name: "Accept nodes" }).click();
   await expect(page.getByText("Frontier Evidence")).toBeVisible();
+});
+
+test("terminal node renders disabled backend policy state", async ({ page }) => {
+  await page.route("**/config", (route) =>
+    route.fulfill({
+      json: {
+        server_execution_enabled: false,
+        host_terminal_enabled: false,
+        terminal_runtime: "disabled",
+        live_research_enabled: false,
+        max_upload_bytes: 26214400,
+        max_prompt_chars: 12000,
+        max_code_chars: 20000,
+        provider: "mock",
+        quality_model: "gemini-3.1-pro-preview",
+        light_model: "gemini-3.1-flash-lite",
+        privacy_boundary: "Mock privacy boundary",
+      },
+    }),
+  );
+  await page.route("**/boards", (route) =>
+    route.fulfill({
+      json: {
+        boards: [
+          {
+            id: "default",
+            title: "Default board",
+            created_at: "2026-06-13T00:00:00Z",
+            updated_at: "2026-06-13T00:00:00Z",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/documents", (route) =>
+    route.fulfill({ json: { documents: [] } }),
+  );
+  await page.route("**/board", (route) => {
+    if (route.request().method() === "PUT") {
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        nodes: [
+          {
+            id: "term-1",
+            type: "terminal",
+            position: { x: 120, y: 120 },
+            data: { title: "Terminal", runtime: "host" },
+            style: { width: 560, height: 360 },
+          },
+        ],
+        edges: [],
+      },
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("Terminal", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Host terminal locked by backend policy").first(),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect" })).toBeDisabled();
+});
+
+test("terminal node connects to mocked websocket runtime", async ({ page }) => {
+  const received: string[] = [];
+  let terminalInput = "";
+  await page.routeWebSocket("ws://localhost:8000/terminal/sessions*", (ws) => {
+    let readySent = false;
+    const sendReady = () => {
+      if (readySent) return;
+      readySent = true;
+      ws.send(
+        JSON.stringify({
+          type: "ready",
+          session_id: "session1",
+          cwd: "/tmp/miro-ai-terminal-test",
+          shell: "/bin/bash",
+        }),
+      );
+    };
+    ws.onMessage((message) => {
+      const text = String(message);
+      received.push(text);
+      const body = JSON.parse(text) as { type?: string; data?: string };
+      sendReady();
+      if (body.type === "input") {
+        terminalInput += body.data ?? "";
+      }
+      if (body.type === "input" && body.data?.includes("\r")) {
+        ws.send(JSON.stringify({ type: "output", data: "mock-ok\r\n" }));
+      }
+      if (body.type === "kill") {
+        ws.send(JSON.stringify({ type: "exit", exit_code: 0 }));
+      }
+    });
+  });
+  await page.route("**/config", (route) =>
+    route.fulfill({
+      json: {
+        server_execution_enabled: false,
+        host_terminal_enabled: true,
+        terminal_runtime: "host",
+        live_research_enabled: false,
+        max_upload_bytes: 26214400,
+        max_prompt_chars: 12000,
+        max_code_chars: 20000,
+        provider: "mock",
+        quality_model: "gemini-3.1-pro-preview",
+        light_model: "gemini-3.1-flash-lite",
+        privacy_boundary: "Mock privacy boundary",
+      },
+    }),
+  );
+  await page.route("**/boards", (route) =>
+    route.fulfill({
+      json: {
+        boards: [
+          {
+            id: "default",
+            title: "Default board",
+            created_at: "2026-06-13T00:00:00Z",
+            updated_at: "2026-06-13T00:00:00Z",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/documents", (route) =>
+    route.fulfill({ json: { documents: [] } }),
+  );
+  await page.route("**/board", (route) => {
+    if (route.request().method() === "PUT") {
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        nodes: [],
+        edges: [],
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByTitle("Host terminal (B)").click();
+  await expect(page.getByText("Terminal", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Connect" }).dispatchEvent("click");
+
+  await expect(page.getByRole("button", { name: "Disconnect" })).toBeVisible();
+  await expect(page.getByText("/tmp/miro-ai-terminal-test")).toBeVisible();
+
+  await page.getByRole("textbox", { name: "Terminal input" }).focus();
+  await page.keyboard.type("echo mock");
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => terminalInput.includes("echo mock")).toBe(true);
+  await expect
+    .poll(() => received.some((item) => item.includes('"type":"resize"')))
+    .toBe(true);
+
+  await page
+    .getByRole("button", { name: "Disconnect" })
+    .dispatchEvent("click");
+  await expect
+    .poll(() => received.some((item) => item.includes('"type":"kill"')))
+    .toBe(true);
 });
 
 test("arena route completes a mocked tutor session", async ({ page }) => {

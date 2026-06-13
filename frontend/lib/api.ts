@@ -40,6 +40,14 @@ export async function getConfig(): Promise<RuntimeConfig> {
   return check(await fetch(`${API}/config`));
 }
 
+export function terminalWebSocketUrl(cols: number, rows: number): string {
+  const url = new URL("/terminal/sessions", API);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("cols", String(cols));
+  url.searchParams.set("rows", String(rows));
+  return url.toString();
+}
+
 export async function listDocuments(): Promise<{ documents: DocumentSummary[] }> {
   return check(await fetch(`${API}/documents`));
 }

@@ -28,6 +28,7 @@ import { TextNode } from "./TextNode";
 import { StickyNode } from "./StickyNode";
 import { ShapeNode, type ShapeKind } from "./ShapeNode";
 import { CodeNode } from "./CodeNode";
+import { TerminalNode } from "./TerminalNode";
 import { TableNode } from "./TableNode";
 import { ChartNode } from "./ChartNode";
 import { NoteNode } from "./NoteNode";
@@ -69,6 +70,7 @@ const nodeTypes = {
   sticky: StickyNode,
   shape: ShapeNode,
   code: CodeNode,
+  terminal: TerminalNode,
   table: TableNode,
   chart: ChartNode,
   note: NoteNode,
@@ -97,7 +99,16 @@ let idCounter = 0;
 const freshId = (kind: string) => `${kind}-${Date.now()}-${idCounter++}`;
 
 const COLORABLE = new Set(["sticky", "shape"]);
+type AddableNodeType = "text" | "sticky" | "shape" | "code" | "terminal";
 type LensMode = "normal" | "argument" | "causal" | "timeline" | "proof" | "revision";
+
+const NODE_CENTER_OFFSETS: Record<AddableNodeType, { x: number; y: number }> = {
+  code: { x: 230, y: 190 },
+  shape: { x: 100, y: 60 },
+  sticky: { x: 100, y: 70 },
+  terminal: { x: 280, y: 180 },
+  text: { x: 100, y: 40 },
+};
 
 const frontierStroke: Record<string, string> = {
   supports: "rgba(34,211,238,0.75)",
@@ -589,7 +600,7 @@ function BoardInner() {
 
   const addNodeAt = useCallback(
     (
-      type: "text" | "sticky" | "shape" | "code",
+      type: AddableNodeType,
       position: { x: number; y: number },
       shape: ShapeKind = "rect",
     ) => {
@@ -616,32 +627,41 @@ function BoardInner() {
                   },
                   style: { width: 460, height: 380 },
                 }
-              : {
-                  id: freshId(type),
-                  type,
-                  position,
-                  data: { label: "", shape, color: "cyan" },
-                  style: { width: 160, height: 110 },
-                };
+              : type === "terminal"
+                ? {
+                    id: freshId(type),
+                    type,
+                    position,
+                    data: { title: "Terminal", runtime: "host" },
+                    style: { width: 560, height: 360 },
+                  }
+                : {
+                    id: freshId(type),
+                    type,
+                    position,
+                    data: { label: "", shape, color: "cyan" },
+                    style: { width: 160, height: 110 },
+                  };
       setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), { ...node, selected: true }]);
     },
     [takeSnapshot, setNodes],
   );
 
   const addAtCursor = useCallback(
-    (type: "text" | "sticky" | "shape" | "code", shape: ShapeKind = "rect") => {
+    (type: AddableNodeType, shape: ShapeKind = "rect") => {
       addNodeAt(type, screenToFlowPosition(mousePos.current), shape);
     },
     [addNodeAt, screenToFlowPosition],
   );
 
   const addNodeAtCenter = useCallback(
-    (type: "text" | "sticky" | "shape" | "code", shape: ShapeKind = "rect") => {
+    (type: AddableNodeType, shape: ShapeKind = "rect") => {
+      const offset = NODE_CENTER_OFFSETS[type];
       addNodeAt(
         type,
         screenToFlowPosition({
-          x: window.innerWidth / 2 - 100,
-          y: window.innerHeight / 2 - 60,
+          x: window.innerWidth / 2 - offset.x,
+          y: window.innerHeight / 2 - offset.y,
         }),
         shape,
       );
@@ -709,6 +729,7 @@ function BoardInner() {
         else if (k === "o") addAtCursor("shape", "ellipse");
         else if (k === "d") addAtCursor("shape", "diamond");
         else if (k === "c") addAtCursor("code");
+        else if (k === "b") addAtCursor("terminal");
         else if (k === "k") addKnowledgeAtCenter();
         else if (k === "escape") {
           setSelected(null);
@@ -1226,6 +1247,13 @@ function BoardInner() {
           >
             {"</>"}
           </button>
+          <button
+            onClick={() => addNodeAtCenter("terminal")}
+            className="flex h-10 w-10 items-center justify-center rounded-xl font-mono text-[15px] font-semibold text-sky-300/90 transition-colors hover:bg-sky-400/10 hover:text-sky-200"
+            title="Host terminal (B)"
+          >
+            $
+          </button>
           <input
             ref={fileInput}
             type="file"
@@ -1336,6 +1364,10 @@ function BoardInner() {
                   {
                     label: "Add manual concept",
                     action: addKnowledgeAtCenter,
+                  },
+                  {
+                    label: "Add host terminal",
+                    action: () => addNodeAtCenter("terminal"),
                   },
                   {
                     label: "Create linked chart from selected table",
