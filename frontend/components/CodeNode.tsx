@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { tokyoNight } from "@uiw/codemirror-theme-tokyo-night";
@@ -12,7 +12,7 @@ import {
   type Node,
 } from "@xyflow/react";
 
-import { executeCode, type CodeResult } from "@/lib/api";
+import { executeCode, getConfig, type CodeResult } from "@/lib/api";
 import { runPythonInBrowser } from "@/lib/pyodide-runner";
 import { useBoardActions } from "@/lib/board-context";
 
@@ -26,10 +26,29 @@ export type CodeNodeType = Node<
 export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
   const { updateNodeData } = useBoardActions();
   const [running, setRunning] = useState(false);
+  const [serverAllowed, setServerAllowed] = useState(false);
   const runtime: Runtime = data.runtime ?? "browser";
+
+  useEffect(() => {
+    void getConfig()
+      .then((config) => setServerAllowed(config.server_execution_enabled))
+      .catch(() => setServerAllowed(false));
+  }, []);
 
   const run = useCallback(async () => {
     if (running) return;
+    if (runtime === "server" && !serverAllowed) {
+      updateNodeData(id, {
+        result: {
+          stdout: "",
+          stderr: "Server Python execution is disabled. Switch to browser runtime.",
+          exit_code: -1,
+          duration_ms: 0,
+          timed_out: false,
+        },
+      });
+      return;
+    }
     setRunning(true);
     try {
       const result =
@@ -50,7 +69,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
     } finally {
       setRunning(false);
     }
-  }, [running, runtime, data.code, id, updateNodeData]);
+  }, [running, runtime, serverAllowed, data.code, id, updateNodeData]);
 
   const result = data.result;
 
@@ -76,7 +95,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
       />
       <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
 
-      {/* header — also the drag grip */}
+      {/* header - also the drag grip */}
       <div className="flex shrink-0 cursor-grab items-center gap-2 border-b border-white/8 px-3 py-2 active:cursor-grabbing">
         <span className="flex gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
@@ -92,14 +111,17 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
               runtime: runtime === "browser" ? "server" : "browser",
             })
           }
-          className="nodrag rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200"
+          disabled={runtime === "browser" && !serverAllowed}
+          className="nodrag rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           title={
             runtime === "browser"
-              ? "Runs in your browser (WebAssembly sandbox) — click to use the server's Python"
-              : "Runs on the backend's real Python — click to use the browser sandbox"
+              ? serverAllowed
+                ? "Runs in your browser WebAssembly sandbox. Click to use server Python."
+                : "Server Python is disabled by backend policy."
+              : "Runs on backend Python. Click to use the browser sandbox."
           }
         >
-          {runtime === "browser" ? "⬡ browser" : "⌁ server"}
+          {runtime === "browser" ? "browser" : serverAllowed ? "server" : "server locked"}
         </button>
         <span className="ml-auto flex items-center gap-2">
           {result && !running && (
@@ -108,7 +130,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
                 result.exit_code === 0 ? "text-emerald-400/80" : "text-red-400/90"
               }`}
             >
-              exit {result.exit_code} · {result.duration_ms}ms
+              exit {result.exit_code} | {result.duration_ms}ms
             </span>
           )}
           <button
@@ -117,7 +139,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
             className="nodrag rounded-lg bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold text-emerald-200 ring-1 ring-emerald-400/40 transition-all hover:bg-emerald-500/30 disabled:opacity-50"
             title="Run (Ctrl+Enter)"
           >
-            {running ? <span className="shimmer-text">Running…</span> : "▶ Run"}
+            {running ? <span className="shimmer-text">Running...</span> : "Run"}
           </button>
         </span>
       </div>
@@ -143,9 +165,9 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
       {/* terminal */}
       <div className="nodrag nowheel h-[34%] shrink-0 overflow-auto border-t border-white/8 bg-black/60 px-3 py-2 font-mono text-[11px] leading-relaxed">
         {!result && !running && (
-          <span className="text-slate-600">$ output appears here — ▶ Run or Ctrl+Enter</span>
+          <span className="text-slate-600">$ output appears here - Run or Ctrl+Enter</span>
         )}
-        {running && <span className="shimmer-text">$ running…</span>}
+        {running && <span className="shimmer-text">$ running...</span>}
         {result && !running && (
           <>
             {result.stdout && (

@@ -1,8 +1,11 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
 anthropic>=0.49
+google-genai>=1.62
 pymupdf>=1.25
 pdfplumber>=0.11
 pydantic>=2.9
 python-multipart>=0.0.18
 python-dotenv>=1.0
+pytest>=8.3
+httpx>=0.28

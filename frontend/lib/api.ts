@@ -1,4 +1,12 @@
-import type { Artifact, CanvasData } from "./types";
+import type {
+  Artifact,
+  BoardSummary,
+  CanvasData,
+  DocumentSummary,
+  GraphNode,
+  RuntimeConfig,
+  TutorResponse,
+} from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -12,21 +20,35 @@ async function check<T>(res: Response): Promise<T> {
 
 export async function uploadDocument(
   file: File,
-): Promise<{ document_id: string; filename: string; chars: number }> {
+): Promise<{
+  document_id: string;
+  filename: string;
+  chars: number;
+  page_count: number;
+}> {
   const form = new FormData();
   form.append("file", file);
   return check(await fetch(`${API}/documents`, { method: "POST", body: form }));
 }
 
+export async function getConfig(): Promise<RuntimeConfig> {
+  return check(await fetch(`${API}/config`));
+}
+
+export async function listDocuments(): Promise<{ documents: DocumentSummary[] }> {
+  return check(await fetch(`${API}/documents`));
+}
+
 export async function analyzeDocument(
   documentId: string,
   intent?: string | null,
+  boardId = "default",
 ): Promise<{ canvas_id: string; title: string }> {
   return check(
     await fetch(`${API}/documents/${documentId}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: intent ?? null }),
+      body: JSON.stringify({ intent: intent ?? null, board_id: boardId }),
     }),
   );
 }
@@ -49,6 +71,19 @@ export async function generateArtifacts(
         document_ids: documentIds,
         selection,
       }),
+    }),
+  );
+}
+
+export async function getTutor(
+  selection: Pick<GraphNode, "label" | "summary" | "source_quote" | "source_page" | "source_span">[],
+  focus?: string | null,
+): Promise<TutorResponse> {
+  return check(
+    await fetch(`${API}/tutor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selection, focus: focus ?? null }),
     }),
   );
 }
@@ -76,13 +111,29 @@ export interface BoardState {
   edges: unknown[];
 }
 
-export async function getBoard(): Promise<BoardState> {
-  return check(await fetch(`${API}/board`));
+export async function listBoards(): Promise<{ boards: BoardSummary[] }> {
+  return check(await fetch(`${API}/boards`));
 }
 
-export async function saveBoard(state: BoardState): Promise<void> {
+export async function createBoard(title: string): Promise<BoardSummary> {
+  return check(
+    await fetch(`${API}/boards`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    }),
+  );
+}
+
+export async function getBoard(boardId = "default"): Promise<BoardState> {
+  const path = boardId === "default" ? "/board" : `/boards/${boardId}`;
+  return check(await fetch(`${API}${path}`));
+}
+
+export async function saveBoard(state: BoardState, boardId = "default"): Promise<void> {
+  const path = boardId === "default" ? "/board" : `/boards/${boardId}`;
   await check(
-    await fetch(`${API}/board`, {
+    await fetch(`${API}${path}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(state),

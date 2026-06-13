@@ -38,6 +38,9 @@ const kindAccents: Record<
 export function KnowledgeNode({ data, selected }: NodeProps<KnowledgeNodeType>) {
   const { concept } = data;
   const accent = kindAccents[concept.kind] ?? kindAccents.concept;
+  const source = concept.source_span;
+  const page = source?.page ?? concept.source_page;
+  const verified = source?.verified ?? false;
   return (
     <div
       className={`node-enter glass w-[200px] cursor-pointer rounded-xl border px-3.5 py-2.5 transition-all duration-200 ${accent.border} ${accent.glow} ${
@@ -58,6 +61,18 @@ export function KnowledgeNode({ data, selected }: NodeProps<KnowledgeNodeType>) 
         >
           {concept.kind}
         </span>
+        {page && (
+          <span
+            className={`source-chip ml-auto rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+              verified
+                ? "bg-cyan-400/12 text-cyan-200"
+                : "bg-amber-400/12 text-amber-200"
+            }`}
+            title={verified ? "Verified source page" : "Quote needs review"}
+          >
+            p{page}
+          </span>
+        )}
       </div>
       <div className="text-[13px] font-semibold leading-snug text-slate-100">
         {concept.label}

@@ -38,13 +38,25 @@ import { useUndoRedo } from "@/lib/use-undo-redo";
 import { COLOR_NAMES, SWATCH_BG, type ColorName } from "@/lib/colors";
 import {
   analyzeDocument,
+  createBoard,
   generateArtifacts,
   getBoard,
   getCanvas,
+  getConfig,
+  getTutor,
+  listBoards,
+  listDocuments,
   saveBoard,
   uploadDocument,
 } from "@/lib/api";
-import type { GraphNode } from "@/lib/types";
+import type {
+  Artifact,
+  BoardSummary,
+  DocumentSummary,
+  GraphNode,
+  RuntimeConfig,
+  TutorResponse,
+} from "@/lib/types";
 
 const nodeTypes = {
   knowledge: KnowledgeNode,
@@ -69,16 +81,28 @@ let idCounter = 0;
 const freshId = (kind: string) => `${kind}-${Date.now()}-${idCounter++}`;
 
 const COLORABLE = new Set(["sticky", "shape"]);
+type LensMode = "normal" | "argument" | "causal" | "timeline" | "proof" | "revision";
 
 function BoardInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<BoardNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [selected, setSelected] = useState<{ nodeId: string; concept: GraphNode } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [tutor, setTutor] = useState<TutorResponse | null>(null);
+  const [tutorBusy, setTutorBusy] = useState(false);
+  const [tutorError, setTutorError] = useState<string | null>(null);
+  const [config, setConfig] = useState<RuntimeConfig | null>(null);
+  const [boards, setBoards] = useState<BoardSummary[]>([]);
+  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
+  const [currentBoardId, setCurrentBoardId] = useState("default");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [lensMode, setLensMode] = useState<LensMode>("normal");
+  const [zoom, setZoom] = useState(1);
   const [editingEdge, setEditingEdge] = useState<{
     id: string;
     x: number;
@@ -95,15 +119,26 @@ function BoardInner() {
 
   const { takeSnapshot, undo, redo } = useUndoRedo(setNodes, setEdges);
 
-  // ---- load persisted board ----
   useEffect(() => {
-    getBoard()
+    void getConfig()
+      .then(setConfig)
+      .catch(() => setConfig(null));
+    void listBoards()
+      .then(({ boards }) => setBoards(boards))
+      .catch(() => setBoards([]));
+    void listDocuments()
+      .then(({ documents }) => setDocuments(documents))
+      .catch(() => setDocuments([]));
+  }, []);
+
+  useEffect(() => {
+    getBoard(currentBoardId)
       .then((state) => {
         const restored = (state.nodes as BoardNode[]).map((n) => {
           if (n.type !== "document") return n;
           const meta = n.data as DocumentMeta;
           if (meta.status === "uploading")
-            return { ...n, data: { ...meta, status: "error", error: "Interrupted — drop the file again" } };
+            return { ...n, data: { ...meta, status: "error", error: "Interrupted - drop the file again" } };
           if (meta.status === "analyzing")
             return { ...n, data: { ...meta, status: "pending" } };
           return n;
@@ -113,19 +148,18 @@ function BoardInner() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [setNodes, setEdges]);
+  }, [currentBoardId, setNodes, setEdges]);
 
-  // ---- debounced persistence ----
   useEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void saveBoard({ nodes, edges }).catch(() => {});
+      void saveBoard({ nodes, edges }, currentBoardId).catch(() => {});
     }, 800);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [nodes, edges, loaded]);
+  }, [nodes, edges, loaded, currentBoardId]);
 
   const patchNode = useCallback(
     (id: string, patch: Record<string, unknown>) => {
@@ -136,7 +170,183 @@ function BoardInner() {
     [setNodes],
   );
 
-  // ---- clipboard ----
+  const patchKnowledgeNode = useCallback(
+    (id: string, patch: Partial<GraphNode>) => {
+      setNodes((ns) =>
+        ns.map((n) => {
+          if (n.id !== id || n.type !== "knowledge") return n;
+          const data = n.data as { concept: GraphNode };
+          return { ...n, data: { ...data, concept: { ...data.concept, ...patch } } };
+        }),
+      );
+      setSelected((current) =>
+        current?.nodeId === id
+          ? { ...current, concept: { ...current.concept, ...patch } }
+          : current,
+      );
+    },
+    [setNodes],
+  );
+
+  const createNewBoard = useCallback(async () => {
+    const title = `Board ${boards.length + 1}`;
+    const board = await createBoard(title);
+    setBoards((items) => [board, ...items]);
+    setLoaded(false);
+    setCurrentBoardId(board.id);
+  }, [boards.length]);
+
+  const selectedKnowledge = useCallback(
+    () =>
+      nodes
+        .filter((n) => n.selected && n.type === "knowledge")
+        .map((n) => (n.data as { concept: GraphNode }).concept),
+    [nodes],
+  );
+
+  const exportSelected = useCallback(
+    (format: "json" | "markdown" | "presentation") => {
+      const concepts = selectedKnowledge();
+      if (!concepts.length) return;
+      const name = `miro-ai-selection-${Date.now()}`;
+      const content =
+        format === "json"
+          ? JSON.stringify({ nodes: concepts }, null, 2)
+          : concepts
+              .map((concept) => {
+                const source = concept.source_span;
+                const page = source?.page ?? concept.source_page ?? "?";
+                const citation = `p${page}`;
+                const body = [
+                  `# ${concept.label}`,
+                  "",
+                  concept.summary,
+                  "",
+                  `Source: ${citation}`,
+                  "",
+                  `> ${concept.source_quote}`,
+                ].join("\n");
+                return format === "presentation" ? `${body}\n\n---` : body;
+              })
+              .join("\n\n");
+      const blob = new Blob([content], {
+        type: format === "json" ? "application/json" : "text/markdown",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${name}.${format === "json" ? "json" : "md"}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    },
+    [selectedKnowledge],
+  );
+
+  const openPresentation = useCallback(() => {
+    const concepts = selectedKnowledge();
+    if (!concepts.length) {
+      setAiError("Select concept nodes before opening presentation mode.");
+      return;
+    }
+    localStorage.setItem(
+      "miro-ai-presentation",
+      JSON.stringify({ createdAt: new Date().toISOString(), nodes: concepts }),
+    );
+    window.open("/present", "_blank", "noopener,noreferrer");
+  }, [selectedKnowledge]);
+
+  const runTutor = useCallback(async () => {
+    const concepts = selectedKnowledge();
+    if (!concepts.length || tutorBusy) {
+      setTutorError("Select grounded concept nodes first.");
+      return;
+    }
+    setTutorBusy(true);
+    setTutorError(null);
+    try {
+      const result = await getTutor(
+        concepts.map((concept) => ({
+          label: concept.label,
+          summary: concept.summary,
+          source_quote: concept.source_quote,
+          source_page: concept.source_page,
+          source_span: concept.source_span,
+        })),
+      );
+      setTutor(result);
+    } catch (e) {
+      setTutorError(e instanceof Error ? e.message : "Tutor failed");
+    } finally {
+      setTutorBusy(false);
+    }
+  }, [selectedKnowledge, tutorBusy]);
+
+  const createChartFromSelectedTable = useCallback(() => {
+    const tableNode = nodes.find((n) => n.selected && n.type === "table");
+    const artifact = (tableNode?.data as { artifact?: Artifact } | undefined)?.artifact;
+    const table = artifact?.table;
+    if (!tableNode || !artifact || !table?.headers.length || !table.rows.length) {
+      setAiError("Select a table with at least one numeric column.");
+      return;
+    }
+    const labelHeader = table.headers[0] ?? "Item";
+    const numericColumn = table.headers.findIndex((_, columnIndex) => {
+      if (columnIndex === 0) return false;
+      return table.rows.some((row) => Number.isFinite(Number(row[columnIndex])));
+    });
+    if (numericColumn < 1) {
+      setAiError("Selected table has no numeric column to chart.");
+      return;
+    }
+    const points = table.rows
+      .map((row, index) => ({
+        label: row[0] || `Row ${index + 1}`,
+        value: Number(row[numericColumn]),
+      }))
+      .filter((point) => Number.isFinite(point.value));
+    if (!points.length) {
+      setAiError("Selected table has no numeric values to chart.");
+      return;
+    }
+    takeSnapshot();
+    const chartId = freshId("chart");
+    const chartArtifact: Artifact = {
+      kind: "chart",
+      title: `${artifact.title} chart`,
+      table: { headers: [], rows: [] },
+      chart: {
+        type: "bar",
+        x_label: labelHeader,
+        y_label: table.headers[numericColumn] ?? "Value",
+        series: [{ name: table.headers[numericColumn] ?? "Value", points }],
+      },
+      note: { body: "" },
+    };
+    setNodes((ns) => [
+      ...ns,
+      {
+        id: chartId,
+        type: "chart",
+        position: {
+          x: tableNode.position.x + 420,
+          y: tableNode.position.y,
+        },
+        data: { artifact: chartArtifact },
+        selected: true,
+      },
+    ]);
+    setEdges((es) => [
+      ...es,
+      {
+        id: freshId("edge"),
+        source: tableNode.id,
+        target: chartId,
+        label: "visualizes",
+        style: { stroke: "rgba(167,139,250,0.55)", strokeWidth: 1.5 },
+      },
+    ]);
+  }, [nodes, takeSnapshot, setNodes, setEdges]);
+
   const copySelection = useCallback(() => {
     const sel = getNodes().filter((n) => n.selected);
     if (!sel.length) return;
@@ -173,7 +383,6 @@ function BoardInner() {
     }));
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), ...newNodes]);
     setEdges((es) => [...es, ...newEdges]);
-    // cascade repeated pastes
     clip.nodes = clip.nodes.map((n) => ({
       ...n,
       position: { x: n.position.x + 28, y: n.position.y + 28 },
@@ -213,7 +422,6 @@ function BoardInner() {
     [takeSnapshot, setNodes],
   );
 
-  // ---- whiteboard primitives ----
   const addNodeAt = useCallback(
     (
       type: "text" | "sticky" | "shape" | "code",
@@ -276,7 +484,32 @@ function BoardInner() {
     [addNodeAt, screenToFlowPosition],
   );
 
-  // ---- keyboard shortcuts ----
+  const addKnowledgeAtCenter = useCallback(() => {
+    takeSnapshot();
+    const concept: GraphNode = {
+      id: freshId("manual-concept"),
+      label: "New concept",
+      summary: "Add the explanation here.",
+      source_quote: "",
+      source_page: null,
+      source_span: null,
+      kind: "concept",
+    };
+    setNodes((ns) => [
+      ...ns.map((n) => ({ ...n, selected: false })),
+      {
+        id: freshId("knowledge"),
+        type: "knowledge",
+        position: screenToFlowPosition({
+          x: window.innerWidth / 2 - 100,
+          y: window.innerHeight / 2 - 60,
+        }),
+        data: { concept },
+        selected: true,
+      },
+    ]);
+  }, [takeSnapshot, setNodes, screenToFlowPosition]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -284,7 +517,10 @@ function BoardInner() {
         return;
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
-      if (mod && k === "z" && !e.shiftKey) {
+      if (mod && k === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
+      } else if (mod && k === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
       } else if ((mod && k === "z" && e.shiftKey) || (mod && k === "y")) {
@@ -308,17 +544,27 @@ function BoardInner() {
         else if (k === "o") addAtCursor("shape", "ellipse");
         else if (k === "d") addAtCursor("shape", "diamond");
         else if (k === "c") addAtCursor("code");
+        else if (k === "k") addKnowledgeAtCenter();
         else if (k === "escape") {
           setSelected(null);
           setEditingEdge(null);
+          setPaletteOpen(false);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, copySelection, paste, duplicateSelection, addAtCursor, setNodes]);
+  }, [
+    undo,
+    redo,
+    copySelection,
+    paste,
+    duplicateSelection,
+    addAtCursor,
+    addKnowledgeAtCenter,
+    setNodes,
+  ]);
 
-  // ---- phase 1: drop -> upload & parse -> awaiting brief ----
   const ingest = useCallback(
     async (file: File, position: { x: number; y: number }) => {
       takeSnapshot();
@@ -333,8 +579,15 @@ function BoardInner() {
         },
       ]);
       try {
-        const { document_id } = await uploadDocument(file);
-        patchNode(docNodeId, { status: "pending", documentId: document_id });
+        const uploaded = await uploadDocument(file);
+        patchNode(docNodeId, {
+          status: "pending",
+          documentId: uploaded.document_id,
+          pageCount: uploaded.page_count,
+        });
+        void listDocuments()
+          .then(({ documents }) => setDocuments(documents))
+          .catch(() => {});
       } catch (e) {
         patchNode(docNodeId, {
           status: "error",
@@ -345,7 +598,6 @@ function BoardInner() {
     [takeSnapshot, setNodes, patchNode],
   );
 
-  // ---- phase 2: user brief -> extraction -> graph on board ----
   const generateFromDocument = useCallback(
     async (docNodeId: string, intent: string | null) => {
       const docNode = getNode(docNodeId);
@@ -355,7 +607,11 @@ function BoardInner() {
       patchNode(docNodeId, { status: "analyzing" });
 
       try {
-        const { canvas_id } = await analyzeDocument(documentId, intent);
+        const { canvas_id } = await analyzeDocument(
+          documentId,
+          intent,
+          currentBoardId,
+        );
         const canvas = await getCanvas(canvas_id);
         const layout = await computeLayout(canvas.graph);
 
@@ -412,7 +668,7 @@ function BoardInner() {
         });
       }
     },
-    [getNode, patchNode, takeSnapshot, setNodes, setEdges, fitView],
+    [getNode, patchNode, takeSnapshot, setNodes, setEdges, fitView, currentBoardId],
   );
 
   const actions = useMemo<BoardActions>(
@@ -420,10 +676,13 @@ function BoardInner() {
     [patchNode, generateFromDocument],
   );
 
-  // ---- AI command bar ----
-  const runAiPrompt = useCallback(async () => {
-    const prompt = aiPrompt.trim();
+  const runPrompt = useCallback(async (rawPrompt: string) => {
+    const prompt = rawPrompt.trim();
     if (!prompt || aiBusy) return;
+    if (config && prompt.length > config.max_prompt_chars) {
+      setAiError(`Prompt is too long. Limit is ${config.max_prompt_chars} characters.`);
+      return;
+    }
     setAiBusy(true);
     setAiError(null);
     try {
@@ -435,7 +694,13 @@ function BoardInner() {
         .filter((n) => n.selected && n.type === "knowledge")
         .map((n) => {
           const c = (n.data as { concept: GraphNode }).concept;
-          return { label: c.label, summary: c.summary };
+          const source = c.source_span;
+          return {
+            label: c.label,
+            summary: c.summary,
+            source_page: source?.page ?? c.source_page,
+            source_quote: c.source_quote,
+          };
         });
 
       const { artifacts } = await generateArtifacts(prompt, documentIds, selection);
@@ -461,9 +726,12 @@ function BoardInner() {
     } finally {
       setAiBusy(false);
     }
-  }, [aiPrompt, aiBusy, nodes, takeSnapshot, screenToFlowPosition, setNodes, fitView]);
+  }, [aiBusy, config, nodes, takeSnapshot, screenToFlowPosition, setNodes, fitView]);
 
-  // ---- canvas events ----
+  const runAiPrompt = useCallback(() => {
+    void runPrompt(aiPrompt);
+  }, [aiPrompt, runPrompt]);
+
   const onDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       if (!(e.target as HTMLElement).classList.contains("react-flow__pane")) return;
@@ -537,18 +805,47 @@ function BoardInner() {
 
   const onNodeClick: NodeMouseHandler<BoardNode> = useCallback((_, node) => {
     if (node.type === "knowledge") {
-      setSelected((node.data as { concept: GraphNode }).concept);
+      setSelected({ nodeId: node.id, concept: (node.data as { concept: GraphNode }).concept });
     }
   }, []);
 
   const selectionCount = nodes.filter((n) => n.selected).length;
   const hasColorable = nodes.some((n) => n.selected && COLORABLE.has(n.type ?? ""));
   const isEmpty = loaded && nodes.length === 0;
+  const displayEdges = useMemo(
+    () =>
+      edges.map((edge) => {
+        if (lensMode === "normal") return edge;
+        const label = String(edge.label ?? "").toLowerCase();
+        const matches =
+          (lensMode === "causal" &&
+            /cause|drive|lead|result|produce|trigger/.test(label)) ||
+          (lensMode === "argument" &&
+            /claim|support|evidence|counter|argue|prove/.test(label)) ||
+          (lensMode === "proof" && /prove|derive|imply|therefore|lemma/.test(label)) ||
+          (lensMode === "timeline" &&
+            /before|after|then|next|follow|precede/.test(label)) ||
+          (lensMode === "revision" &&
+            /revise|replace|update|contradict|correct/.test(label));
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            opacity: matches ? 1 : 0.25,
+            stroke: matches ? "#22d3ee" : "rgba(100,116,139,0.35)",
+            strokeWidth: matches ? 2.25 : 1,
+          },
+        };
+      }),
+    [edges, lensMode],
+  );
 
   return (
     <BoardContext.Provider value={actions}>
       <div
-        className="board-backdrop relative h-screen w-screen"
+        className={`board-backdrop board-zoom-${
+          zoom < 0.35 ? "overview" : "detail"
+        } relative h-screen w-screen`}
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -564,7 +861,7 @@ function BoardInner() {
       >
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={displayEdges}
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
@@ -576,6 +873,7 @@ function BoardInner() {
           onNodesDelete={() => takeSnapshot()}
           onEdgesDelete={() => takeSnapshot()}
           onPaneClick={() => setSelected(null)}
+          onMove={(_, viewport) => setZoom(viewport.zoom)}
           fitView
           minZoom={0.08}
           zoomOnDoubleClick={false}
@@ -604,15 +902,63 @@ function BoardInner() {
           />
         </ReactFlow>
 
-        {/* top bar */}
-        <header className="glass absolute left-4 top-4 z-20 flex items-center gap-3 rounded-2xl px-5 py-2.5">
+        <header className="glass absolute left-4 top-4 z-20 flex max-w-[calc(100vw-9rem)] items-center gap-3 rounded-2xl px-5 py-2.5">
           <span className="bg-gradient-to-r from-cyan-300 to-violet-400 bg-clip-text text-sm font-bold tracking-tight text-transparent">
             Miro-AI
           </span>
-          <span className="text-xs text-slate-500">Visual thinking canvas</span>
+          <select
+            value={currentBoardId}
+            onChange={(e) => {
+              setLoaded(false);
+              setCurrentBoardId(e.target.value);
+            }}
+            className="rounded-lg border border-white/8 bg-black/30 px-2 py-1 text-xs text-slate-300 outline-none"
+            title="Board"
+          >
+            {boards.length ? (
+              boards.map((board) => (
+                <option key={board.id} value={board.id}>
+                  {board.title}
+                </option>
+              ))
+            ) : (
+              <option value="default">Default board</option>
+            )}
+          </select>
+          <button
+            onClick={() => void createNewBoard()}
+            className="rounded-lg bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            New
+          </button>
+          <button
+            onClick={() => setLibraryOpen((open) => !open)}
+            className="rounded-lg bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            Docs
+          </button>
+          <select
+            value={lensMode}
+            onChange={(e) => setLensMode(e.target.value as LensMode)}
+            className="rounded-lg border border-white/8 bg-black/30 px-2 py-1 text-xs text-slate-300 outline-none"
+            title="Lens mode"
+          >
+            <option value="normal">Normal</option>
+            <option value="argument">Argument</option>
+            <option value="causal">Causal</option>
+            <option value="proof">Proof</option>
+            <option value="timeline">Timeline</option>
+            <option value="revision">Revision</option>
+          </select>
+          <span className="hidden truncate text-xs text-slate-500 lg:inline">
+            {documents.length} docs | {config?.provider ?? "provider"} |{" "}
+            {zoom < 0.35 ? "overview" : "detail"}
+          </span>
+          <span className="hidden max-w-[32rem] truncate text-[11px] text-slate-600 xl:inline">
+            {config?.privacy_boundary}
+          </span>
         </header>
 
-        {/* selection toolbar */}
         {selectionCount > 0 && (
           <div className="glass absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl px-3 py-2">
             {hasColorable && (
@@ -633,27 +979,26 @@ function BoardInner() {
               className="rounded-lg px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
               title="Duplicate (Ctrl+D)"
             >
-              ⧉ Duplicate
+              Duplicate
             </button>
             <button
               onClick={deleteSelection}
               className="rounded-lg px-2.5 py-1 text-xs text-red-300/80 transition-colors hover:bg-red-400/10 hover:text-red-200"
-              title="Delete (⌫)"
+              title="Delete (Backspace)"
             >
-              ✕ Delete
+              x Delete
             </button>
             <span className="pl-1 text-[11px] text-slate-600">{selectionCount} selected</span>
           </div>
         )}
 
-        {/* tool rail */}
         <div className="glass absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-2xl px-2 py-2.5">
           <button
             onClick={() => fileInput.current?.click()}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/90 to-violet-500/90 text-base font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(56,189,248,0.4)]"
             title="Add document (PDF)"
           >
-            ＋
+            +
           </button>
           <div className="my-1 h-px w-6 bg-white/10" />
           <button
@@ -664,32 +1009,39 @@ function BoardInner() {
             T
           </button>
           <button
+            onClick={addKnowledgeAtCenter}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] font-semibold text-cyan-300/90 transition-colors hover:bg-cyan-400/10 hover:text-cyan-200"
+            title="Concept node (K)"
+          >
+            K
+          </button>
+          <button
             onClick={() => addNodeAtCenter("sticky")}
             className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-amber-200/80 transition-colors hover:bg-amber-400/10 hover:text-amber-100"
             title="Sticky note (S)"
           >
-            ▣
+            S
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "rect")}
             className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
             title="Rectangle (R)"
           >
-            ▭
+            R
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "ellipse")}
             className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
             title="Ellipse (O)"
           >
-            ◯
+            O
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "diamond")}
             className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
             title="Diamond (D)"
           >
-            ◇
+            D
           </button>
           <div className="my-1 h-px w-6 bg-white/10" />
           <button
@@ -708,7 +1060,6 @@ function BoardInner() {
           />
         </div>
 
-        {/* AI command bar */}
         <div className="absolute bottom-6 left-1/2 z-20 w-[480px] -translate-x-1/2">
           {aiError && (
             <div className="glass mb-2 rounded-xl border-red-400/30 px-4 py-2 text-xs text-red-300">
@@ -720,7 +1071,7 @@ function BoardInner() {
               aiBusy ? "shadow-[0_0_32px_rgba(56,189,248,0.25)]" : ""
             }`}
           >
-            <span className="text-base">✦</span>
+            <span className="text-base">*</span>
             <input
               value={aiPrompt}
               onChange={(e) => {
@@ -729,7 +1080,8 @@ function BoardInner() {
               }}
               onKeyDown={(e) => e.key === "Enter" && runAiPrompt()}
               disabled={aiBusy}
-              placeholder="Ask AI anything — a table, a chart, an explanation…"
+              maxLength={config?.max_prompt_chars}
+              placeholder="Ask AI anything: table, chart, explanation"
               className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-600 disabled:opacity-60"
             />
             <button
@@ -737,7 +1089,7 @@ function BoardInner() {
               disabled={aiBusy || !aiPrompt.trim()}
               className="shrink-0 rounded-xl bg-gradient-to-r from-cyan-500/90 to-violet-500/90 px-4 py-1.5 text-[13px] font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(56,189,248,0.4)] disabled:opacity-40 disabled:hover:shadow-none"
             >
-              {aiBusy ? <span className="shimmer-text">Creating…</span> : "Generate"}
+              {aiBusy ? <span className="shimmer-text">Creating...</span> : "Generate"}
             </button>
           </div>
           {nodes.some((n) => n.selected && n.type === "knowledge") && (
@@ -748,7 +1100,6 @@ function BoardInner() {
           )}
         </div>
 
-        {/* edge label editor */}
         {editingEdge && (
           <input
             autoFocus
@@ -761,31 +1112,208 @@ function BoardInner() {
               if (e.key === "Escape") setEditingEdge(null);
             }}
             onBlur={commitEdgeLabel}
-            placeholder="Edge label…"
+            placeholder="Edge label..."
             className="glass absolute z-30 w-44 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 outline-none"
             style={{ left: editingEdge.x - 88, top: editingEdge.y - 16 }}
           />
         )}
 
-        {/* empty state */}
+        {paletteOpen && (
+          <div className="absolute inset-0 z-40 flex items-start justify-center bg-black/30 pt-24">
+            <div className="glass w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl p-3 shadow-[0_16px_64px_rgba(0,0,0,0.5)]">
+              <div className="flex items-center justify-between border-b border-white/8 px-2 pb-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Command palette
+                </span>
+                <button
+                  onClick={() => setPaletteOpen(false)}
+                  className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="grid gap-1 pt-2">
+                {[
+                  {
+                    label: "Summarize selected cluster",
+                    action: () => runPrompt("Summarize the selected cluster with citations."),
+                  },
+                  {
+                    label: "Tutor selected region",
+                    action: runTutor,
+                  },
+                  {
+                    label: "Argument lens",
+                    action: () => setLensMode("argument"),
+                  },
+                  {
+                    label: "Causal lens",
+                    action: () => setLensMode("causal"),
+                  },
+                  {
+                    label: "Add manual concept",
+                    action: addKnowledgeAtCenter,
+                  },
+                  {
+                    label: "Create linked chart from selected table",
+                    action: createChartFromSelectedTable,
+                  },
+                  {
+                    label: "Export selected graph as Markdown",
+                    action: () => exportSelected("markdown"),
+                  },
+                  {
+                    label: "Export selected graph as JSON",
+                    action: () => exportSelected("json"),
+                  },
+                  {
+                    label: "Export selected graph as presentation Markdown",
+                    action: () => exportSelected("presentation"),
+                  },
+                  {
+                    label: "Open selected graph as presentation",
+                    action: openPresentation,
+                  },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => {
+                      item.action();
+                      setPaletteOpen(false);
+                    }}
+                    className="rounded-xl px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {libraryOpen && (
+          <aside className="glass absolute left-4 top-20 z-30 w-80 rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Documents
+              </div>
+              <button
+                onClick={() => setLibraryOpen(false)}
+                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {documents.length ? (
+                documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="rounded-xl border border-white/8 bg-black/20 px-3 py-2"
+                  >
+                    <div className="truncate text-sm font-medium text-slate-200">
+                      {doc.filename}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {doc.page_count} pages | {Math.ceil(doc.size_bytes / 1024)} KB
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-6 text-center text-sm text-slate-500">
+                  No uploaded documents yet.
+                </div>
+              )}
+            </div>
+          </aside>
+        )}
+
+        {(tutor || tutorBusy || tutorError) && (
+          <aside className="glass absolute bottom-24 right-4 z-30 w-[420px] max-w-[calc(100vw-2rem)] rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300/80">
+                Tutor
+              </div>
+              <button
+                onClick={() => {
+                  setTutor(null);
+                  setTutorError(null);
+                }}
+                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            {tutorBusy && <div className="shimmer-text text-sm">Building questions...</div>}
+            {tutorError && (
+              <div className="rounded-xl border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300">
+                {tutorError}
+              </div>
+            )}
+            {tutor && !tutorBusy && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-slate-100">{tutor.title}</h3>
+                <div className="space-y-2">
+                  {tutor.questions.map((question, index) => (
+                    <div
+                      key={`${question.question}-${index}`}
+                      className="rounded-xl border border-white/8 bg-black/20 p-3"
+                    >
+                      <div className="text-sm font-medium leading-snug text-slate-100">
+                        {question.question}
+                      </div>
+                      <div className="mt-1 text-xs leading-relaxed text-slate-400">
+                        {question.why}
+                      </div>
+                      <div className="mt-2 flex items-start gap-2 text-[11px] text-slate-500">
+                        <span className="rounded bg-emerald-400/10 px-1.5 py-0.5 font-semibold text-emerald-200">
+                          p{question.source_page ?? "?"}
+                        </span>
+                        <span className="line-clamp-2 italic">
+                          {question.source_quote}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {tutor.weak_links.length > 0 && (
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200">
+                      Weak links
+                    </div>
+                    <ul className="space-y-1 text-xs text-amber-100/80">
+                      {tutor.weak_links.map((link, index) => (
+                        <li key={`${link}-${index}`}>{link}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </aside>
+        )}
+
         {isEmpty && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
             <div className="bg-gradient-to-r from-cyan-300 via-slate-100 to-violet-300 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
               Drop a document. Watch it think.
             </div>
             <p className="mt-3 text-sm text-slate-500">
-              PDFs become interactive maps — or double-click anywhere to start writing.
+              PDFs stay in this local backend, then go to the configured AI provider only when you generate a map.
             </p>
           </div>
         )}
 
-        {/* drag highlight */}
         {dragging && (
           <div className="pointer-events-none absolute inset-3 z-30 rounded-3xl border-2 border-dashed border-cyan-400/60 bg-cyan-400/5" />
         )}
 
         {selected && (
-          <NodePanel concept={selected} onClose={() => setSelected(null)} />
+          <NodePanel
+            concept={selected.concept}
+            onChange={(patch) => patchKnowledgeNode(selected.nodeId, patch)}
+            onClose={() => setSelected(null)}
+          />
         )}
       </div>
     </BoardContext.Provider>

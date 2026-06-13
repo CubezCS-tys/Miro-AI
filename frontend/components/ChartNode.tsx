@@ -103,7 +103,7 @@ export function ChartNode({ data, selected }: NodeProps<ChartNodeType>) {
       {chart.y_label && (
         <div className="mb-2 text-[10px] uppercase tracking-wide text-slate-500">
           {chart.y_label}
-          {chart.x_label ? ` · by ${chart.x_label}` : ""}
+          {chart.x_label ? ` | by ${chart.x_label}` : ""}
         </div>
       )}
       {body}

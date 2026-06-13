@@ -5,12 +5,9 @@ and note cards. One schema, every kind always present — the unused sections
 stay empty, which keeps the structured-output contract simple and strict.
 """
 
-import os
-
-import anthropic
 from pydantic import BaseModel
 
-from services.graph_extractor import MODEL
+from services.llm import generate_json
 
 MAX_CONTEXT_CHARS = 300_000
 
@@ -154,37 +151,18 @@ table instead.
 
 {context_block}User request: {prompt}"""
 
-client = anthropic.Anthropic()
-
 
 def generate_artifacts(prompt: str, context: str = "") -> list[Artifact]:
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set — export it before starting the backend"
-        )
     context_block = ""
     if context.strip():
         context_block = (
             f"<board_context>\n{context[:MAX_CONTEXT_CHARS]}\n</board_context>\n\n"
         )
-    with client.messages.stream(
-        model=MODEL,
-        max_tokens=16000,
-        thinking={"type": "adaptive"},
-        output_config={"format": {"type": "json_schema", "schema": ARTIFACT_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": GENERATION_PROMPT.format(
-                    context_block=context_block, prompt=prompt
-                ),
-            }
-        ],
-    ) as stream:
-        message = stream.get_final_message()
-
-    if message.stop_reason == "refusal":
-        raise RuntimeError("Model declined this request")
-
-    bundle = ArtifactBundle.model_validate_json(message.content[-1].text)
+    result = generate_json(
+        task="generate_artifacts",
+        prompt=GENERATION_PROMPT.format(context_block=context_block, prompt=prompt),
+        schema=ARTIFACT_SCHEMA,
+        model_role="light",
+    )
+    bundle = ArtifactBundle.model_validate(result.parsed)
     return bundle.artifacts

@@ -1,4 +1,4 @@
-# ───────────────────────── OS / Editor ─────────────────────────
+# OS / Editor
 .DS_Store
 Thumbs.db
 *.swp
@@ -6,14 +6,14 @@ Thumbs.db
 .idea/
 .vscode/
 
-# ───────────────────────── Secrets / Env ───────────────────────
+# Secrets / Env
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 
-# ───────────────────────── Python (backend) ────────────────────
+# Python (backend)
 __pycache__/
 *.py[cod]
 *$py.class
@@ -30,7 +30,7 @@ env/
 *.sqlite3
 backend/uploads/
 
-# ───────────────────────── Node / Next.js (frontend) ───────────
+# Node / Next.js (frontend)
 node_modules/
 .next/
 out/
@@ -38,6 +38,8 @@ build/
 dist/
 next-env.d.ts
 *.tsbuildinfo
+frontend/test-results/
+frontend/playwright-report/
 
 # Logs
 *.log
@@ -46,7 +48,27 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# ───────────────────────── Misc ────────────────────────────────
+# Misc
 coverage/
 .cache/
 tmp/
+
+# Local agent state
+.agent/
+.claude/agent-logs/
+.claude/logs/
+.claude/tmp/
+.claude/cache/
+.codex/logs/
+.codex/tmp/
+.codex/cache/
+.codex/memory/
+
+# Local agent docs and native goal files
+/AGENTS.md
+/CLAUDE.md
+/goal.txt
+/goal.md
+/GOAL.md
+/ACTIVE_PLAN.md
+/TODO.agent.md

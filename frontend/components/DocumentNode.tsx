@@ -11,6 +11,7 @@ export interface DocumentMeta {
   title?: string;
   error?: string;
   nodeCount?: number;
+  pageCount?: number;
   [key: string]: unknown;
 }
 
@@ -26,7 +27,7 @@ const PRESETS = [
   {
     label: "Key arguments",
     intent:
-      "Map the claims, the evidence for them, and the counterpoints — an argument map.",
+      "Map the claims, the evidence for them, and the counterpoints - an argument map.",
   },
 ] as const;
 
@@ -66,7 +67,7 @@ function BriefForm({ nodeId }: { nodeId: string }) {
         value={focus}
         onChange={(e) => setFocus(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && submit()}
-        placeholder="Optional: focus on a topic, question, chapter…"
+        placeholder="Optional: focus on a topic, question, chapter..."
         className="mb-2.5 w-full rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-[12px] text-slate-200 outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
       />
       <button
@@ -101,14 +102,16 @@ export function DocumentNode({ id, data }: NodeProps<DocumentNodeType>) {
             {data.title ?? data.filename}
           </div>
           {data.status === "uploading" && (
-            <div className="shimmer-text text-[11px] font-medium">Reading…</div>
+            <div className="shimmer-text text-[11px] font-medium">Reading...</div>
           )}
           {data.status === "pending" && (
-            <div className="text-[11px] text-violet-300">Ready when you are</div>
+            <div className="text-[11px] text-violet-300">
+              {data.pageCount ? `${data.pageCount} pages ready` : "Ready when you are"}
+            </div>
           )}
           {data.status === "analyzing" && (
             <div className="shimmer-text text-[11px] font-medium">
-              Mapping concepts…
+              Mapping concepts...
             </div>
           )}
           {data.status === "ready" && (

@@ -110,3 +110,7 @@ body {
 .react-flow__edge-textbg {
   fill: #060912;
 }
+
+.board-zoom-overview .react-flow__node-knowledge .source-chip {
+  opacity: 0;
+}
