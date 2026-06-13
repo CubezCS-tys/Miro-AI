@@ -1,0 +1,6 @@
+Khushmeen Doodle Icons
+
+Hand-drawn icon set by Khushmeen Sidhu (https://khushmeen.com/icons.html).
+Free for personal and commercial use, no attribution required.
+Vendored from https://github.com/svatsa159/react-doodle-icons
+Recolored to currentColor via CSS mask; see components/icons.tsx.

@@ -75,8 +75,8 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
 
   return (
     <div
-      className={`glass flex h-full w-full flex-col overflow-hidden rounded-2xl border border-emerald-400/25 ${
-        selected ? "shadow-[0_0_28px_rgba(52,211,153,0.18)]" : ""
+      className={`node-surface flex h-full w-full flex-col overflow-hidden rounded-2xl ${
+        selected ? "!border-accent ring-1 ring-accent" : ""
       }`}
       onKeyDown={(e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -90,19 +90,19 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
         isVisible={selected}
         minWidth={320}
         minHeight={240}
-        lineClassName="!border-emerald-400/60"
-        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-emerald-400"
+        lineClassName="!border-accent"
+        handleClassName="!h-2 !w-2 !rounded-sm !border-0 !bg-accent"
       />
-      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
 
       {/* header - also the drag grip */}
-      <div className="flex shrink-0 cursor-grab items-center gap-2 border-b border-white/8 px-3 py-2 active:cursor-grabbing">
+      <div className="flex shrink-0 cursor-grab items-center gap-2 border-b border-line px-3 py-2 active:cursor-grabbing">
         <span className="flex gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-contradiction/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
         </span>
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300/90">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-success">
           Python
         </span>
         <button
@@ -112,7 +112,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
             })
           }
           disabled={runtime === "browser" && !serverAllowed}
-          className="nodrag rounded-md bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className="nodrag rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-muted transition-colors hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
           title={
             runtime === "browser"
               ? serverAllowed
@@ -127,7 +127,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
           {result && !running && (
             <span
               className={`font-mono text-[10px] ${
-                result.exit_code === 0 ? "text-emerald-400/80" : "text-red-400/90"
+                result.exit_code === 0 ? "text-success" : "text-contradiction"
               }`}
             >
               exit {result.exit_code} | {result.duration_ms}ms
@@ -136,7 +136,7 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
           <button
             onClick={() => void run()}
             disabled={running}
-            className="nodrag rounded-lg bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold text-emerald-200 ring-1 ring-emerald-400/40 transition-all hover:bg-emerald-500/30 disabled:opacity-50"
+            className="nodrag rounded-lg bg-success/15 px-3 py-1 text-[11px] font-semibold text-success ring-1 ring-success/40 transition-colors hover:bg-success/25 disabled:opacity-50"
             title="Run (Ctrl+Enter)"
           >
             {running ? <span className="shimmer-text">Running...</span> : "Run"}
@@ -163,27 +163,27 @@ export function CodeNode({ id, data, selected }: NodeProps<CodeNodeType>) {
       </div>
 
       {/* terminal */}
-      <div className="nodrag nowheel h-[34%] shrink-0 overflow-auto border-t border-white/8 bg-black/60 px-3 py-2 font-mono text-[11px] leading-relaxed">
+      <div className="nodrag nowheel h-[34%] shrink-0 overflow-auto border-t border-line bg-surface-2 px-3 py-2 font-mono text-[11px] leading-relaxed">
         {!result && !running && (
-          <span className="text-slate-600">$ output appears here - Run or Ctrl+Enter</span>
+          <span className="text-faint">$ output appears here - Run or Ctrl+Enter</span>
         )}
         {running && <span className="shimmer-text">$ running...</span>}
         {result && !running && (
           <>
             {result.stdout && (
-              <pre className="whitespace-pre-wrap text-slate-200">{result.stdout}</pre>
+              <pre className="whitespace-pre-wrap text-fg">{result.stdout}</pre>
             )}
             {result.stderr && (
-              <pre className="whitespace-pre-wrap text-red-300/90">{result.stderr}</pre>
+              <pre className="whitespace-pre-wrap text-contradiction">{result.stderr}</pre>
             )}
             {!result.stdout && !result.stderr && (
-              <span className="text-slate-600">(no output)</span>
+              <span className="text-faint">(no output)</span>
             )}
           </>
         )}
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-slate-500" />
+      <Handle type="source" position={Position.Bottom} className="!h-1.5 !w-1.5 !border-0 !bg-faint" />
     </div>
   );
 }

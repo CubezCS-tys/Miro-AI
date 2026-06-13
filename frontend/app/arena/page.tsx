@@ -114,10 +114,10 @@ export default function ArenaPage() {
 
   if (!payload?.selected_nodes.length) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#060912] px-6 text-slate-300">
-        <div className="max-w-md rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
-          <h1 className="text-lg font-semibold text-slate-100">No arena loaded</h1>
-          <p className="mt-2 text-sm text-slate-500">
+      <main className="flex min-h-screen items-center justify-center bg-canvas px-6 text-muted">
+        <div className="max-w-md rounded-2xl border border-line bg-surface p-6 text-center">
+          <h1 className="text-lg font-semibold text-fg">No arena loaded</h1>
+          <p className="mt-2 text-sm text-faint">
             Select grounded concept nodes on the board, then open Tutor Arena.
           </p>
         </div>
@@ -126,26 +126,26 @@ export default function ArenaPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#060912] text-slate-100">
-      <header className="fixed left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-white/8 bg-[#060912]/90 px-6 py-4 backdrop-blur">
+    <main className="min-h-screen bg-canvas text-fg">
+      <header className="glass fixed left-0 right-0 top-0 z-10 flex items-center justify-between border-x-0 border-t-0 px-6 py-4">
         <div>
-          <div className="text-sm font-semibold text-cyan-200">Graph Tutor Arena</div>
-          <div className="mt-1 text-xs text-slate-500">
+          <div className="text-sm font-semibold text-fg">Graph Tutor Arena</div>
+          <div className="mt-1 text-xs text-faint">
             {payload.selected_nodes.length} selected node(s)
           </div>
         </div>
         <button
           onClick={() => void finishNow()}
           disabled={!session || busy}
-          className="rounded-lg bg-white/5 px-4 py-2 text-sm font-semibold text-slate-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-lg border border-line bg-surface px-4 py-2 text-sm font-semibold text-fg transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Finish session
         </button>
       </header>
 
-      <section className="grid min-h-screen grid-cols-[280px_1fr_340px] gap-4 px-6 pb-6 pt-24">
-        <aside className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+      <section className="grid min-h-screen grid-cols-1 gap-4 px-4 pb-6 pt-24 sm:px-6 lg:grid-cols-[280px_1fr_340px]">
+        <aside className="rounded-2xl border border-line bg-surface p-4">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-faint">
             Region mastery
           </div>
           <div className="space-y-2">
@@ -154,18 +154,18 @@ export default function ArenaPage() {
               const mastery = masteryEntries.find(([id]) => id === nodeId)?.[1];
               const score = mastery?.score ?? 0.2;
               return (
-                <div key={nodeId} className="rounded-xl border border-white/8 bg-black/20 p-3">
+                <div key={nodeId} className="rounded-xl border border-line bg-surface-2 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="truncate text-sm font-medium text-slate-100">
+                    <div className="truncate text-sm font-medium text-fg">
                       {node.label}
                     </div>
-                    <span className="rounded bg-cyan-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200">
+                    <span className="rounded bg-citation/12 px-1.5 py-0.5 text-[10px] font-semibold text-citation">
                       {mastery?.state ?? "unknown"}
                     </span>
                   </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line-strong">
                     <div
-                      className="h-full rounded-full bg-cyan-300"
+                      className="h-full rounded-full bg-accent"
                       style={{ width: `${Math.round(score * 100)}%` }}
                     />
                   </div>
@@ -175,40 +175,40 @@ export default function ArenaPage() {
           </div>
         </aside>
 
-        <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-6">
+        <section className="rounded-2xl border border-line bg-surface p-5 sm:p-6">
           {busy && !question && !finish && (
             <div className="shimmer-text text-sm">Starting arena...</div>
           )}
           {error && (
-            <div className="mb-4 rounded-xl border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300">
+            <div className="mb-4 rounded-xl border border-contradiction/30 bg-contradiction/5 px-3 py-2 text-sm text-contradiction">
               {error}
             </div>
           )}
           {question && (
             <div className="flex h-full flex-col">
               <div className="mb-4 flex items-center gap-2">
-                <span className="rounded bg-cyan-400/10 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                <span className="rounded bg-citation/12 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-citation">
                   {question.kind}
                 </span>
-                <span className="rounded bg-white/5 px-2 py-1 text-xs font-semibold text-slate-400">
+                <span className="rounded bg-surface-2 px-2 py-1 text-xs font-semibold text-muted">
                   p{question.source_page ?? "?"}
                 </span>
               </div>
-              <h1 className="max-w-3xl text-3xl font-bold leading-tight text-slate-50">
+              <h1 className="max-w-3xl text-2xl font-bold leading-tight text-fg sm:text-3xl">
                 {question.question}
               </h1>
-              <blockquote className="mt-6 max-w-3xl border-l-2 border-cyan-300/50 pl-4 text-sm italic leading-relaxed text-slate-400">
+              <blockquote className="mt-6 max-w-3xl border-l-2 border-citation/50 pl-4 text-sm italic leading-relaxed text-muted">
                 {question.source_quote}
               </blockquote>
               {lastResult && (
-                <div className="mt-6 rounded-xl border border-white/8 bg-black/20 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <div className="mt-6 rounded-xl border border-line bg-surface-2 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-faint">
                     Last evaluation
                   </div>
-                  <div className="mt-2 text-sm font-semibold text-cyan-100">
+                  <div className="mt-2 text-sm font-semibold text-citation">
                     {lastResult.evaluation.verdict}
                   </div>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-400">
+                  <p className="mt-1 text-sm leading-relaxed text-muted">
                     {lastResult.evaluation.feedback}
                   </p>
                 </div>
@@ -218,13 +218,13 @@ export default function ArenaPage() {
                   value={answer}
                   onChange={(event) => setAnswer(event.target.value)}
                   placeholder="Answer from the source first, then reason from it."
-                  className="min-h-32 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-400/40"
+                  className="min-h-32 w-full resize-none rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm leading-relaxed text-fg outline-none placeholder:text-faint focus:border-accent"
                 />
                 <div className="mt-3 flex justify-end">
                   <button
                     onClick={() => void submitAnswer()}
                     disabled={busy || !answer.trim()}
-                    className="rounded-xl bg-cyan-400/15 px-4 py-2 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-400/25 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {busy ? "Checking" : "Submit answer"}
                   </button>
@@ -235,13 +235,13 @@ export default function ArenaPage() {
           {finish && (
             <div className="space-y-5">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300/80">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-success">
                   Session output
                 </div>
-                <h1 className="mt-2 text-3xl font-bold text-slate-50">
+                <h1 className="mt-2 text-2xl font-bold text-fg sm:text-3xl">
                   Review pack ready
                 </h1>
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
                   {finish.graph_revision.summary}
                 </p>
               </div>
@@ -249,12 +249,12 @@ export default function ArenaPage() {
                 {finish.flashcards.map((card) => (
                   <div
                     key={`${card.node_id}-${card.front}`}
-                    className="rounded-xl border border-white/8 bg-black/20 p-4"
+                    className="rounded-xl border border-line bg-surface-2 p-4"
                   >
-                    <div className="text-sm font-semibold text-slate-100">
+                    <div className="text-sm font-semibold text-fg">
                       {card.front}
                     </div>
-                    <div className="mt-2 text-xs leading-relaxed text-slate-400">
+                    <div className="mt-2 text-xs leading-relaxed text-muted">
                       {card.back}
                     </div>
                   </div>
@@ -264,8 +264,8 @@ export default function ArenaPage() {
           )}
         </section>
 
-        <aside className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        <aside className="rounded-2xl border border-line bg-surface p-4">
+          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-faint">
             Presentation path
           </div>
           <div className="space-y-2">
@@ -277,12 +277,12 @@ export default function ArenaPage() {
             }))).map((item) => (
               <div
                 key={`${item.step}-${item.node_id}`}
-                className="rounded-xl border border-white/8 bg-black/20 p-3"
+                className="rounded-xl border border-line bg-surface-2 p-3"
               >
-                <div className="text-[11px] font-semibold text-cyan-200">
-                  Step {item.step} | p{item.source_page ?? "?"}
+                <div className="text-[11px] font-semibold text-citation">
+                  Step {item.step} · p{item.source_page ?? "?"}
                 </div>
-                <div className="mt-1 text-sm text-slate-200">{item.title}</div>
+                <div className="mt-1 text-sm text-fg">{item.title}</div>
               </div>
             ))}
           </div>

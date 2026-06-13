@@ -35,7 +35,28 @@ import { NodePanel } from "./NodePanel";
 import { computeLayout } from "@/lib/layout";
 import { BoardContext, type BoardActions } from "@/lib/board-context";
 import { useUndoRedo } from "@/lib/use-undo-redo";
+import { useTheme } from "@/lib/use-theme";
 import { COLOR_NAMES, SWATCH_BG, type ColorName } from "@/lib/colors";
+import {
+  CloseIcon,
+  CodeIcon,
+  CommandIcon,
+  ConceptIcon,
+  CopyIcon,
+  DiamondIcon,
+  DocsIcon,
+  EllipseIcon,
+  FileUpIcon,
+  LensIcon,
+  MoonIcon,
+  PlusIcon,
+  RectIcon,
+  SparkleIcon,
+  StickyIcon,
+  SunIcon,
+  TextIcon,
+  TrashIcon,
+} from "./icons";
 import {
   acceptFrontierProposal,
   analyzeDocument,
@@ -100,10 +121,13 @@ const COLORABLE = new Set(["sticky", "shape"]);
 type LensMode = "normal" | "argument" | "causal" | "timeline" | "proof" | "revision";
 
 const frontierStroke: Record<string, string> = {
-  supports: "rgba(34,211,238,0.75)",
-  contradicts: "rgba(251,113,133,0.78)",
-  context: "rgba(167,139,250,0.72)",
+  supports: "var(--fg)",
+  contradicts: "var(--fg)",
+  context: "var(--muted)",
 };
+const EDGE_DEFAULT = "color-mix(in oklab, var(--muted) 55%, transparent)";
+const EDGE_DOC = "color-mix(in oklab, var(--fg) 55%, transparent)";
+const EDGE_LINK = "color-mix(in oklab, var(--muted) 70%, transparent)";
 
 function BoardInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<BoardNode>([]);
@@ -144,6 +168,24 @@ function BoardInner() {
   const mousePos = useRef({ x: 0, y: 0 });
 
   const { takeSnapshot, undo, redo } = useUndoRedo(setNodes, setEdges);
+  const { theme, toggle: toggleTheme } = useTheme();
+  const canvasColors = useMemo(
+    () =>
+      theme === "light"
+        ? {
+            dot: "rgba(0,0,0,0.13)",
+            minimapBg: "rgba(255,255,255,0.82)",
+            minimapMask: "rgba(0,0,0,0.06)",
+            minimapNode: "#cbcbd1",
+          }
+        : {
+            dot: "rgba(255,255,255,0.10)",
+            minimapBg: "rgba(18,18,21,0.82)",
+            minimapMask: "rgba(0,0,0,0.55)",
+            minimapNode: "#3f3f46",
+          },
+    [theme],
+  );
 
   useEffect(() => {
     void getConfig()
@@ -385,10 +427,10 @@ function BoardInner() {
             data: { kind },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: frontierStroke[kind] ?? "rgba(148,163,184,0.7)",
+              color: frontierStroke[kind] ?? EDGE_DEFAULT,
             },
             style: {
-              stroke: frontierStroke[kind] ?? "rgba(148,163,184,0.55)",
+              stroke: frontierStroke[kind] ?? EDGE_DEFAULT,
               strokeWidth: kind === "contradicts" ? 2.25 : 1.75,
               strokeDasharray: kind === "contradicts" ? "6 4" : undefined,
             },
@@ -507,7 +549,7 @@ function BoardInner() {
         source: tableNode.id,
         target: chartId,
         label: "visualizes",
-        style: { stroke: "rgba(167,139,250,0.55)", strokeWidth: 1.5 },
+        style: { stroke: EDGE_LINK, strokeWidth: 1.5 },
       },
     ]);
   }, [nodes, takeSnapshot, setNodes, setEdges]);
@@ -810,14 +852,14 @@ function BoardInner() {
             source: `${prefix}-${e.source}`,
             target: `${prefix}-${e.target}`,
             label: e.label,
-            style: { stroke: "rgba(100,116,139,0.5)" },
+            style: { stroke: EDGE_DEFAULT },
           })),
           ...roots.map((r) => ({
             id: `${prefix}-root-${r.id}`,
             source: docNodeId,
             target: `${prefix}-${r.id}`,
             animated: true,
-            style: { stroke: "rgba(34,211,238,0.45)" },
+            style: { stroke: EDGE_DOC },
           })),
         ];
 
@@ -916,8 +958,8 @@ function BoardInner() {
         addEdge(
           {
             ...connection,
-            markerEnd: { type: MarkerType.ArrowClosed, color: "rgba(148,163,184,0.7)" },
-            style: { stroke: "rgba(148,163,184,0.55)", strokeWidth: 1.5 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: EDGE_DEFAULT },
+            style: { stroke: EDGE_DEFAULT, strokeWidth: 1.5 },
           },
           es,
         ),
@@ -1007,7 +1049,9 @@ function BoardInner() {
           style: {
             ...edge.style,
             opacity: matches ? 1 : 0.25,
-            stroke: matches ? "#22d3ee" : "rgba(100,116,139,0.35)",
+            stroke: matches
+              ? "var(--accent)"
+              : "color-mix(in oklab, var(--muted) 40%, transparent)",
             strokeWidth: matches ? 2.25 : 1,
           },
         };
@@ -1057,37 +1101,38 @@ function BoardInner() {
           panOnDrag={[1, 2]}
           snapToGrid
           snapGrid={[12, 12]}
-          colorMode="dark"
+          colorMode={theme}
           style={{ background: "transparent" }}
         >
           <Background
             variant={BackgroundVariant.Dots}
-            gap={28}
-            size={1.5}
-            color="rgba(71,85,105,0.35)"
+            gap={24}
+            size={1.4}
+            color={canvasColors.dot}
           />
           <Controls position="bottom-right" showInteractive={false} />
           <MiniMap
             position="top-right"
             pannable
             zoomable
-            bgColor="rgba(13,18,32,0.8)"
-            maskColor="rgba(6,9,18,0.7)"
-            nodeColor="#334155"
+            bgColor={canvasColors.minimapBg}
+            maskColor={canvasColors.minimapMask}
+            nodeColor={canvasColors.minimapNode}
           />
         </ReactFlow>
 
-        <header className="glass absolute left-4 top-4 z-20 flex max-w-[calc(100vw-9rem)] items-center gap-3 rounded-2xl px-5 py-2.5">
-          <span className="bg-gradient-to-r from-cyan-300 to-violet-400 bg-clip-text text-sm font-bold tracking-tight text-transparent">
+        <header className="glass absolute left-3 top-3 z-20 flex max-w-[calc(100vw-1.5rem)] items-center gap-1.5 overflow-x-auto rounded-xl px-2.5 py-1.5 text-fg scroll-thin">
+          <span className="shrink-0 whitespace-nowrap px-1 text-[15px] font-bold tracking-tight text-fg">
             Miro-AI
           </span>
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-line-strong" />
           <select
             value={currentBoardId}
             onChange={(e) => {
               setLoaded(false);
               setCurrentBoardId(e.target.value);
             }}
-            className="rounded-lg border border-white/8 bg-black/30 px-2 py-1 text-xs text-slate-300 outline-none"
+            className="max-w-[7.5rem] shrink-0 rounded-lg border border-line bg-surface-2 px-2 py-1 text-xs text-fg outline-none focus:border-accent"
             title="Board"
           >
             {boards.length ? (
@@ -1102,129 +1147,165 @@ function BoardInner() {
           </select>
           <button
             onClick={() => void createNewBoard()}
-            className="rounded-lg bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            title="New board"
+            aria-label="New board"
           >
-            New
+            <PlusIcon />
           </button>
           <button
             onClick={() => setLibraryOpen((open) => !open)}
-            className="rounded-lg bg-white/5 px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-surface-2 hover:text-fg ${
+              libraryOpen ? "bg-surface-2 text-fg" : "text-muted"
+            }`}
+            title="Document library"
+            aria-label="Document library"
           >
-            Docs
+            <DocsIcon />
           </button>
-          <select
-            value={lensMode}
-            onChange={(e) => setLensMode(e.target.value as LensMode)}
-            className="rounded-lg border border-white/8 bg-black/30 px-2 py-1 text-xs text-slate-300 outline-none"
-            title="Lens mode"
-          >
-            <option value="normal">Normal</option>
-            <option value="argument">Argument</option>
-            <option value="causal">Causal</option>
-            <option value="proof">Proof</option>
-            <option value="timeline">Timeline</option>
-            <option value="revision">Revision</option>
-          </select>
-          <span className="hidden truncate text-xs text-slate-500 lg:inline">
-            {documents.length} docs | {config?.provider ?? "provider"} |{" "}
+          <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-line-strong sm:block" />
+          <span className="hidden shrink-0 items-center gap-1 text-muted sm:flex">
+            <LensIcon size={14} className="shrink-0" />
+            <select
+              value={lensMode}
+              onChange={(e) => setLensMode(e.target.value as LensMode)}
+              className="rounded-lg border border-line bg-surface-2 px-1.5 py-1 text-xs text-fg outline-none focus:border-accent"
+              title="Lens mode"
+            >
+              <option value="normal">Normal</option>
+              <option value="argument">Argument</option>
+              <option value="causal">Causal</option>
+              <option value="proof">Proof</option>
+              <option value="timeline">Timeline</option>
+              <option value="revision">Revision</option>
+            </select>
+          </span>
+          <span className="ml-1 hidden shrink-0 truncate text-[11px] text-faint lg:inline">
+            {documents.length} docs · {config?.provider ?? "provider"} ·{" "}
             {zoom < 0.35 ? "overview" : "detail"}
           </span>
-          <span className="hidden max-w-[32rem] truncate text-[11px] text-slate-600 xl:inline">
-            {config?.privacy_boundary}
-          </span>
+          <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-line-strong sm:block" />
+          <button
+            onClick={toggleTheme}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            title="Command palette (Ctrl/Cmd+K)"
+            aria-label="Open command palette"
+          >
+            <CommandIcon size={14} />
+            <span className="hidden text-[11px] font-medium sm:inline">K</span>
+          </button>
         </header>
 
         {selectionCount > 0 && (
-          <div className="glass absolute left-1/2 top-4 z-20 flex -translate-x-1/2 items-center gap-2 rounded-2xl px-3 py-2">
+          <div className="glass absolute bottom-[5.5rem] left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-xl px-2 py-1.5 text-fg sm:bottom-auto sm:top-3">
             {hasColorable && (
               <>
                 {COLOR_NAMES.map((c) => (
                   <button
                     key={c}
                     onClick={() => applyColor(c)}
-                    className={`h-4.5 w-4.5 rounded-full ${SWATCH_BG[c]} transition-transform hover:scale-125`}
+                    className={`h-4 w-4 rounded-full ring-1 ring-line-strong ${SWATCH_BG[c]} transition-transform hover:scale-125`}
                     title={c}
+                    aria-label={`Color ${c}`}
                   />
                 ))}
-                <div className="mx-1 h-5 w-px bg-white/10" />
+                <span className="mx-0.5 h-5 w-px bg-line-strong" />
               </>
             )}
             <button
               onClick={duplicateSelection}
-              className="rounded-lg px-2.5 py-1 text-xs text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg"
               title="Duplicate (Ctrl+D)"
             >
-              Duplicate
+              <CopyIcon size={14} />
+              <span className="hidden sm:inline">Duplicate</span>
             </button>
             <button
               onClick={deleteSelection}
-              className="rounded-lg px-2.5 py-1 text-xs text-red-300/80 transition-colors hover:bg-red-400/10 hover:text-red-200"
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted transition-colors hover:bg-contradiction/10 hover:text-contradiction"
               title="Delete (Backspace)"
             >
-              x Delete
+              <TrashIcon size={14} />
+              <span className="hidden sm:inline">Delete</span>
             </button>
-            <span className="pl-1 text-[11px] text-slate-600">{selectionCount} selected</span>
+            <span className="px-1 text-[11px] text-faint">{selectionCount}</span>
           </div>
         )}
 
-        <div className="glass absolute left-4 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-2xl px-2 py-2.5">
+        <div className="glass absolute left-3 top-1/2 z-20 flex max-h-[calc(100vh-1.5rem)] -translate-y-1/2 flex-col items-center gap-0.5 overflow-y-auto rounded-xl px-1.5 py-2 scroll-thin">
           <button
             onClick={() => fileInput.current?.click()}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/90 to-violet-500/90 text-base font-semibold text-white transition-all hover:shadow-[0_0_24px_rgba(56,189,248,0.4)]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-accent-fg transition-transform hover:scale-105"
             title="Add document (PDF)"
+            aria-label="Add document"
           >
-            +
+            <FileUpIcon size={18} />
           </button>
-          <div className="my-1 h-px w-6 bg-white/10" />
+          <span className="my-1 h-px w-5 bg-line-strong" />
           <button
             onClick={() => addNodeAtCenter("text")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] font-medium text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             title="Text (T, or double-click the board)"
+            aria-label="Add text"
           >
-            T
+            <TextIcon size={18} />
           </button>
           <button
             onClick={addKnowledgeAtCenter}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] font-semibold text-cyan-300/90 transition-colors hover:bg-cyan-400/10 hover:text-cyan-200"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-citation/12 hover:text-citation"
             title="Concept node (K)"
+            aria-label="Add concept node"
           >
-            K
+            <ConceptIcon size={18} />
           </button>
           <button
             onClick={() => addNodeAtCenter("sticky")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-amber-200/80 transition-colors hover:bg-amber-400/10 hover:text-amber-100"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-warning/12 hover:text-warning"
             title="Sticky note (S)"
+            aria-label="Add sticky note"
           >
-            S
+            <StickyIcon size={18} />
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "rect")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             title="Rectangle (R)"
+            aria-label="Add rectangle"
           >
-            R
+            <RectIcon size={18} />
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "ellipse")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             title="Ellipse (O)"
+            aria-label="Add ellipse"
           >
-            O
+            <EllipseIcon size={18} />
           </button>
           <button
             onClick={() => addNodeAtCenter("shape", "diamond")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl text-[15px] text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2 hover:text-fg"
             title="Diamond (D)"
+            aria-label="Add diamond"
           >
-            D
+            <DiamondIcon size={18} />
           </button>
-          <div className="my-1 h-px w-6 bg-white/10" />
+          <span className="my-1 h-px w-5 bg-line-strong" />
           <button
             onClick={() => addNodeAtCenter("code")}
-            className="flex h-10 w-10 items-center justify-center rounded-xl font-mono text-[13px] font-semibold text-emerald-300/90 transition-colors hover:bg-emerald-400/10 hover:text-emerald-200"
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-success/12 hover:text-success"
             title="Python code block (C)"
+            aria-label="Add Python code block"
           >
-            {"</>"}
+            <CodeIcon size={18} />
           </button>
           <input
             ref={fileInput}
@@ -1235,18 +1316,16 @@ function BoardInner() {
           />
         </div>
 
-        <div className="absolute bottom-6 left-1/2 z-20 w-[480px] -translate-x-1/2">
+        <div className="absolute bottom-4 left-1/2 z-20 w-[min(560px,calc(100vw-1.5rem))] -translate-x-1/2">
           {aiError && (
-            <div className="glass mb-2 rounded-xl border-red-400/30 px-4 py-2 text-xs text-red-300">
+            <div className="glass mb-2 rounded-xl border-contradiction/40 px-4 py-2 text-xs text-contradiction">
               {aiError}
             </div>
           )}
           <div
-            className={`glass flex items-center gap-2 rounded-2xl py-2 pl-4 pr-2 transition-shadow ${
-              aiBusy ? "shadow-[0_0_32px_rgba(56,189,248,0.25)]" : ""
-            }`}
+            className="glass flex items-center gap-2 py-1.5 pl-3 pr-1.5 shadow-[var(--shadow-panel)]"
           >
-            <span className="text-base">*</span>
+            <SparkleIcon size={16} className="shrink-0 text-accent" />
             <input
               value={aiPrompt}
               onChange={(e) => {
@@ -1257,18 +1336,18 @@ function BoardInner() {
               disabled={aiBusy}
               maxLength={config?.max_prompt_chars}
               placeholder="Ask AI anything: table, chart, explanation"
-              className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-600 disabled:opacity-60"
+              className="w-full bg-transparent text-sm text-fg outline-none placeholder:text-faint disabled:opacity-60"
             />
             <button
               onClick={runAiPrompt}
               disabled={aiBusy || !aiPrompt.trim()}
-              className="shrink-0 rounded-xl bg-gradient-to-r from-cyan-500/90 to-violet-500/90 px-4 py-1.5 text-[13px] font-semibold text-white transition-all hover:shadow-[0_0_20px_rgba(56,189,248,0.4)] disabled:opacity-40 disabled:hover:shadow-none"
+              className="shrink-0 rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-semibold text-accent-fg transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {aiBusy ? <span className="shimmer-text">Creating...</span> : "Generate"}
             </button>
           </div>
           {nodes.some((n) => n.selected && n.type === "knowledge") && (
-            <div className="mt-1.5 text-center text-[11px] text-cyan-300/70">
+            <div className="mt-1.5 text-center text-[11px] text-citation">
               {nodes.filter((n) => n.selected && n.type === "knowledge").length}{" "}
               selected node(s) will be used as context
             </div>
@@ -1288,26 +1367,34 @@ function BoardInner() {
             }}
             onBlur={commitEdgeLabel}
             placeholder="Edge label..."
-            className="glass absolute z-30 w-44 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 outline-none"
+            className="glass absolute z-30 w-44 rounded-lg px-2.5 py-1.5 text-xs text-fg outline-none placeholder:text-faint focus:border-accent"
             style={{ left: editingEdge.x - 88, top: editingEdge.y - 16 }}
           />
         )}
 
         {paletteOpen && (
-          <div className="absolute inset-0 z-40 flex items-start justify-center bg-black/30 pt-24">
-            <div className="glass w-[520px] max-w-[calc(100vw-2rem)] rounded-2xl p-3 shadow-[0_16px_64px_rgba(0,0,0,0.5)]">
-              <div className="flex items-center justify-between border-b border-white/8 px-2 pb-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <div
+            className="absolute inset-0 z-40 flex items-start justify-center bg-black/40 px-4 pt-[12vh]"
+            onClick={() => setPaletteOpen(false)}
+          >
+            <div
+              className="glass w-[520px] max-w-full rounded-2xl p-2.5 shadow-[var(--shadow-panel)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-line px-2 pb-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-faint">
+                  <CommandIcon size={13} />
                   Command palette
                 </span>
                 <button
                   onClick={() => setPaletteOpen(false)}
-                  className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+                  className="rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg"
+                  aria-label="Close command palette"
                 >
-                  Close
+                  <CloseIcon size={14} />
                 </button>
               </div>
-              <div className="grid gap-1 pt-2">
+              <div className="grid gap-0.5 pt-1.5">
                 {[
                   {
                     label: "Summarize selected cluster",
@@ -1364,7 +1451,7 @@ function BoardInner() {
                       item.action();
                       setPaletteOpen(false);
                     }}
-                    className="rounded-xl px-3 py-2 text-left text-sm text-slate-300 transition-colors hover:bg-white/8 hover:text-white"
+                    className="rounded-lg px-3 py-2 text-left text-sm text-muted transition-colors hover:bg-accent hover:text-accent-fg"
                   >
                     {item.label}
                   </button>
@@ -1375,14 +1462,14 @@ function BoardInner() {
         )}
 
         {(frontierProposal || frontierBusy || frontierError) && (
-          <aside className="glass absolute left-24 top-20 z-30 w-[440px] max-w-[calc(100vw-8rem)] rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+          <aside className="glass absolute left-3 right-3 top-16 z-30 rounded-2xl p-4 shadow-[var(--shadow-panel)] sm:left-20 sm:right-auto sm:w-[440px] sm:max-w-[calc(100vw-6rem)]">
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300/80">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-citation">
                   Research frontier
                 </div>
                 {frontierProposal && (
-                  <div className="mt-1 truncate text-[11px] text-slate-500">
+                  <div className="mt-1 truncate text-[11px] text-faint">
                     {frontierProposal.proposal.query}
                   </div>
                 )}
@@ -1392,56 +1479,66 @@ function BoardInner() {
                   setFrontierProposal(null);
                   setFrontierError(null);
                 }}
-                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+                className="shrink-0 rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg"
+                aria-label="Close research frontier"
               >
-                Close
+                <CloseIcon size={14} />
               </button>
             </div>
             {frontierBusy && (
               <div className="shimmer-text text-sm">Expanding cited frontier...</div>
             )}
             {frontierError && (
-              <div className="rounded-xl border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300">
+              <div className="rounded-xl border border-contradiction/30 bg-contradiction/5 px-3 py-2 text-sm text-contradiction">
                 {frontierError}
               </div>
             )}
             {frontierProposal && !frontierBusy && (
               <div className="space-y-3">
-                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <div className="rounded-xl border border-line bg-surface-2 p-3">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-faint">
                     Source ledger
                   </div>
                   {frontierProposal.proposal.sources.map((source) => (
-                    <div key={source.id} className="text-sm text-slate-200">
+                    <div key={source.id} className="text-sm text-fg">
                       {source.title}
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        {source.kind} | {source.sha256?.slice(0, 12)}
+                      <div className="mt-1 text-[11px] text-faint">
+                        {source.kind} · {source.sha256?.slice(0, 12)}
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="max-h-72 space-y-2 overflow-y-auto">
+                <div className="max-h-72 space-y-2 overflow-y-auto scroll-thin">
                   {frontierProposal.proposal.nodes.map((node) => {
                     const claim = frontierProposal.proposal.claims.find(
                       (item) => item.quote === node.source_quote,
                     );
+                    const stance = claim?.stance ?? "context";
+                    const stanceClass =
+                      stance === "supports"
+                        ? "bg-success/12 text-success"
+                        : stance === "contradicts"
+                          ? "bg-contradiction/12 text-contradiction"
+                          : "bg-citation/12 text-citation";
                     return (
                       <div
                         key={node.id}
-                        className="rounded-xl border border-white/8 bg-black/20 p-3"
+                        className="rounded-xl border border-line bg-surface-2 p-3"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-semibold text-slate-100">
+                          <div className="text-sm font-semibold text-fg">
                             {node.label}
                           </div>
-                          <span className="rounded bg-cyan-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200">
-                            {claim?.stance ?? "context"}
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${stanceClass}`}
+                          >
+                            {stance}
                           </span>
                         </div>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                        <p className="mt-1 text-xs leading-relaxed text-muted">
                           {node.summary}
                         </p>
-                        <div className="mt-2 border-l-2 border-cyan-400/40 pl-2 text-[11px] italic leading-relaxed text-slate-500">
+                        <div className="mt-2 border-l-2 border-citation/50 pl-2 text-[11px] italic leading-relaxed text-faint">
                           {node.source_quote}
                         </div>
                       </div>
@@ -1451,13 +1548,13 @@ function BoardInner() {
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => void rejectFrontier()}
-                    className="rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                    className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:bg-surface-2 hover:text-fg"
                   >
                     Reject
                   </button>
                   <button
                     onClick={() => void acceptFrontier()}
-                    className="rounded-lg bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25"
+                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-accent-fg transition-opacity hover:opacity-90"
                   >
                     Accept nodes
                   </button>
@@ -1468,35 +1565,37 @@ function BoardInner() {
         )}
 
         {libraryOpen && (
-          <aside className="glass absolute left-4 top-20 z-30 w-80 rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+          <aside className="glass absolute left-3 top-16 z-30 w-[min(20rem,calc(100vw-1.5rem))] rounded-2xl p-4 shadow-[var(--shadow-panel)]">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-faint">
+                <DocsIcon size={13} />
                 Documents
               </div>
               <button
                 onClick={() => setLibraryOpen(false)}
-                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+                className="rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg"
+                aria-label="Close documents"
               >
-                Close
+                <CloseIcon size={14} />
               </button>
             </div>
-            <div className="max-h-80 space-y-2 overflow-y-auto">
+            <div className="max-h-80 space-y-2 overflow-y-auto scroll-thin">
               {documents.length ? (
                 documents.map((doc) => (
                   <div
                     key={doc.id}
-                    className="rounded-xl border border-white/8 bg-black/20 px-3 py-2"
+                    className="rounded-xl border border-line bg-surface-2 px-3 py-2"
                   >
-                    <div className="truncate text-sm font-medium text-slate-200">
+                    <div className="truncate text-sm font-medium text-fg">
                       {doc.filename}
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      {doc.page_count} pages | {Math.ceil(doc.size_bytes / 1024)} KB
+                    <div className="mt-1 text-[11px] text-faint">
+                      {doc.page_count} pages · {Math.ceil(doc.size_bytes / 1024)} KB
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-white/8 bg-black/20 px-3 py-6 text-center text-sm text-slate-500">
+                <div className="rounded-xl border border-line bg-surface-2 px-3 py-6 text-center text-sm text-faint">
                   No uploaded documents yet.
                 </div>
               )}
@@ -1505,9 +1604,9 @@ function BoardInner() {
         )}
 
         {(tutor || tutorBusy || tutorError) && (
-          <aside className="glass absolute bottom-24 right-4 z-30 w-[420px] max-w-[calc(100vw-2rem)] rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+          <aside className="glass absolute bottom-24 right-3 z-30 w-[min(420px,calc(100vw-1.5rem))] rounded-2xl p-4 shadow-[var(--shadow-panel)]">
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300/80">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-success">
                 Tutor
               </div>
               <button
@@ -1515,34 +1614,35 @@ function BoardInner() {
                   setTutor(null);
                   setTutorError(null);
                 }}
-                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+                className="rounded-lg p-1 text-faint transition-colors hover:bg-surface-2 hover:text-fg"
+                aria-label="Close tutor"
               >
-                Close
+                <CloseIcon size={14} />
               </button>
             </div>
             {tutorBusy && <div className="shimmer-text text-sm">Building questions...</div>}
             {tutorError && (
-              <div className="rounded-xl border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300">
+              <div className="rounded-xl border border-contradiction/30 bg-contradiction/5 px-3 py-2 text-sm text-contradiction">
                 {tutorError}
               </div>
             )}
             {tutor && !tutorBusy && (
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-slate-100">{tutor.title}</h3>
+                <h3 className="text-sm font-semibold text-fg">{tutor.title}</h3>
                 <div className="space-y-2">
                   {tutor.questions.map((question, index) => (
                     <div
                       key={`${question.question}-${index}`}
-                      className="rounded-xl border border-white/8 bg-black/20 p-3"
+                      className="rounded-xl border border-line bg-surface-2 p-3"
                     >
-                      <div className="text-sm font-medium leading-snug text-slate-100">
+                      <div className="text-sm font-medium leading-snug text-fg">
                         {question.question}
                       </div>
-                      <div className="mt-1 text-xs leading-relaxed text-slate-400">
+                      <div className="mt-1 text-xs leading-relaxed text-muted">
                         {question.why}
                       </div>
-                      <div className="mt-2 flex items-start gap-2 text-[11px] text-slate-500">
-                        <span className="rounded bg-emerald-400/10 px-1.5 py-0.5 font-semibold text-emerald-200">
+                      <div className="mt-2 flex items-start gap-2 text-[11px] text-faint">
+                        <span className="rounded bg-citation/12 px-1.5 py-0.5 font-semibold text-citation">
                           p{question.source_page ?? "?"}
                         </span>
                         <span className="line-clamp-2 italic">
@@ -1553,11 +1653,11 @@ function BoardInner() {
                   ))}
                 </div>
                 {tutor.weak_links.length > 0 && (
-                  <div className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3">
-                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200">
+                  <div className="rounded-xl border border-warning/25 bg-warning/5 p-3">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-warning">
                       Weak links
                     </div>
-                    <ul className="space-y-1 text-xs text-amber-100/80">
+                    <ul className="space-y-1 text-xs text-warning">
                       {tutor.weak_links.map((link, index) => (
                         <li key={`${link}-${index}`}>{link}</li>
                       ))}
@@ -1570,18 +1670,18 @@ function BoardInner() {
         )}
 
         {isEmpty && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center">
-            <div className="bg-gradient-to-r from-cyan-300 via-slate-100 to-violet-300 bg-clip-text text-3xl font-bold tracking-tight text-transparent">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center px-6 text-center">
+            <div className="text-2xl font-bold tracking-tight text-fg sm:text-3xl">
               Drop a document. Watch it think.
             </div>
-            <p className="mt-3 text-sm text-slate-500">
+            <p className="mt-3 max-w-md text-sm text-muted">
               PDFs stay in this local backend, then go to the configured AI provider only when you generate a map.
             </p>
           </div>
         )}
 
         {dragging && (
-          <div className="pointer-events-none absolute inset-3 z-30 rounded-3xl border-2 border-dashed border-cyan-400/60 bg-cyan-400/5" />
+          <div className="pointer-events-none absolute inset-3 z-30 rounded-3xl border-2 border-dashed border-accent/60 bg-accent/5" />
         )}
 
         {selected && (
