@@ -11,8 +11,11 @@ Miro-AI turns PDFs into grounded visual knowledge graphs. The product bet is sim
 - AI artifact generation for tables, charts, and notes using selected graph/document context.
 - Browser-first Python code nodes through Pyodide.
 - Backend Python execution gated off by default behind `MIRO_AI_ENABLE_SERVER_EXECUTION=true`.
+- Source-page viewer for grounded nodes, with quote highlights from stored page text.
 - Multi-board storage and a document library API.
-- Command palette foundation for cluster summaries, Socratic tutor mode, lens modes, linked chart creation, and selected graph export.
+- Research Frontier Mode, currently mocked and gated: selected clusters produce cited support, contradiction, and context proposal nodes that must be accepted before they hit the canvas.
+- Graph Tutor Arena at `/arena`, currently mocked: selected graph regions become a Socratic answer loop with mastery state, flashcards, and a presentation path.
+- Command palette foundation for cluster summaries, Socratic tutor mode, Tutor Arena, Research Frontier, lens modes, linked chart creation, and selected graph export.
 - Presentation mode at `/present` for selected grounded graph regions.
 - Mocked backend and frontend smoke tests plus CI.
 
@@ -35,6 +38,7 @@ Core flow:
 - Uploaded PDFs are stored by the local backend.
 - Document text is sent to the configured AI provider only when analysis or generation is requested.
 - Server-side Python execution is disabled by default. Browser Python remains available.
+- Live web research fetching is disabled by default behind `MIRO_AI_ENABLE_LIVE_RESEARCH=true`. The current Research Frontier implementation uses mocked sources.
 - Secrets live in `backend/.env`; never commit it.
 - Local LLM responses are cached in SQLite by task/model/schema/content hash to reduce repeat cost.
 
@@ -63,6 +67,7 @@ MIRO_AI_FALLBACK_PROVIDER=anthropic
 MIRO_AI_EXTRACTION_MODEL=gemini-3.1-pro-preview
 MIRO_AI_LIGHT_MODEL=gemini-3.1-flash-lite
 MIRO_AI_ENABLE_SERVER_EXECUTION=false
+MIRO_AI_ENABLE_LIVE_RESEARCH=false
 ```
 
 ## Frontend
@@ -87,12 +92,14 @@ npm run test:smoke
 ```
 
 The tests use mocked provider responses and do not require real Gemini or Anthropic keys.
+The browser smoke suite covers the board, source-page highlights, mocked frontier acceptance, mocked Tutor Arena, and presentation mode.
 
 ## Useful API endpoints
 
 - `GET /config`
 - `POST /documents`
 - `GET /documents`
+- `GET /documents/{id}/pages/{page}`
 - `POST /documents/{id}/analyze`
 - `GET /canvas/{id}`
 - `GET /boards`
@@ -101,4 +108,11 @@ The tests use mocked provider responses and do not require real Gemini or Anthro
 - `PUT /boards/{id}`
 - `POST /generate`
 - `POST /tutor`
+- `POST /research/frontier`, mocked unless live research is explicitly enabled later
+- `POST /research/proposals/{id}/accept`
+- `POST /research/proposals/{id}/reject`
+- `POST /tutor/sessions`
+- `POST /tutor/sessions/{id}/answer`
+- `GET /tutor/sessions/{id}`
+- `POST /tutor/sessions/{id}/finish`
 - `POST /execute`, disabled unless explicitly enabled

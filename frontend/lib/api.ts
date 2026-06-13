@@ -1,8 +1,13 @@
 import type {
+  ArenaAnswerResponse,
+  ArenaFinishResponse,
+  ArenaSession,
   Artifact,
   BoardSummary,
   CanvasData,
+  DocumentPage,
   DocumentSummary,
+  FrontierProposalResponse,
   GraphNode,
   RuntimeConfig,
   TutorResponse,
@@ -37,6 +42,13 @@ export async function getConfig(): Promise<RuntimeConfig> {
 
 export async function listDocuments(): Promise<{ documents: DocumentSummary[] }> {
   return check(await fetch(`${API}/documents`));
+}
+
+export async function getDocumentPage(
+  documentId: string,
+  page: number,
+): Promise<DocumentPage> {
+  return check(await fetch(`${API}/documents/${documentId}/pages/${page}`));
 }
 
 export async function analyzeDocument(
@@ -84,6 +96,92 @@ export async function getTutor(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ selection, focus: focus ?? null }),
+    }),
+  );
+}
+
+export async function expandFrontier(input: {
+  board_id: string;
+  query?: string | null;
+  selection: (Pick<
+    GraphNode,
+    "id" | "label" | "summary" | "source_quote" | "source_page" | "source_span" | "kind"
+  > & { node_id?: string })[];
+  source_types?: string[];
+  budget?: string;
+}): Promise<FrontierProposalResponse> {
+  return check(
+    await fetch(`${API}/research/frontier`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        board_id: input.board_id,
+        query: input.query ?? null,
+        selection: input.selection,
+        source_types: input.source_types ?? ["mock"],
+        budget: input.budget ?? "cheap",
+      }),
+    }),
+  );
+}
+
+export async function acceptFrontierProposal(
+  proposalId: string,
+): Promise<FrontierProposalResponse> {
+  return check(
+    await fetch(`${API}/research/proposals/${proposalId}/accept`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function rejectFrontierProposal(
+  proposalId: string,
+): Promise<{ proposal_id: string; status: "rejected" }> {
+  return check(
+    await fetch(`${API}/research/proposals/${proposalId}/reject`, {
+      method: "POST",
+    }),
+  );
+}
+
+export async function createArenaSession(input: {
+  board_id: string;
+  selected_nodes: (GraphNode & { node_id?: string })[];
+  mode?: string;
+}): Promise<ArenaSession> {
+  return check(
+    await fetch(`${API}/tutor/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        board_id: input.board_id,
+        selected_nodes: input.selected_nodes,
+        mode: input.mode ?? "socratic",
+      }),
+    }),
+  );
+}
+
+export async function answerArenaQuestion(
+  sessionId: string,
+  answer: string,
+): Promise<ArenaAnswerResponse> {
+  return check(
+    await fetch(`${API}/tutor/sessions/${sessionId}/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer }),
+    }),
+  );
+}
+
+export async function finishArenaSession(
+  sessionId: string,
+): Promise<ArenaFinishResponse> {
+  return check(
+    await fetch(`${API}/tutor/sessions/${sessionId}/finish`, {
+      method: "POST",
     }),
   );
 }

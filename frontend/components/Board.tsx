@@ -37,8 +37,10 @@ import { BoardContext, type BoardActions } from "@/lib/board-context";
 import { useUndoRedo } from "@/lib/use-undo-redo";
 import { COLOR_NAMES, SWATCH_BG, type ColorName } from "@/lib/colors";
 import {
+  acceptFrontierProposal,
   analyzeDocument,
   createBoard,
+  expandFrontier,
   generateArtifacts,
   getBoard,
   getCanvas,
@@ -46,6 +48,7 @@ import {
   getTutor,
   listBoards,
   listDocuments,
+  rejectFrontierProposal,
   saveBoard,
   uploadDocument,
 } from "@/lib/api";
@@ -53,6 +56,7 @@ import type {
   Artifact,
   BoardSummary,
   DocumentSummary,
+  FrontierProposalResponse,
   GraphNode,
   RuntimeConfig,
   TutorResponse,
@@ -71,6 +75,18 @@ const nodeTypes = {
 };
 
 type BoardNode = Node;
+type KnowledgeNodeData = {
+  concept: GraphNode;
+  sourceDocumentId?: string;
+  sourceDocumentName?: string;
+};
+
+type SelectedConcept = {
+  nodeId: string;
+  concept: GraphNode;
+  sourceDocumentId?: string;
+  sourceDocumentName?: string;
+};
 
 interface Clipboard {
   nodes: BoardNode[];
@@ -83,10 +99,16 @@ const freshId = (kind: string) => `${kind}-${Date.now()}-${idCounter++}`;
 const COLORABLE = new Set(["sticky", "shape"]);
 type LensMode = "normal" | "argument" | "causal" | "timeline" | "proof" | "revision";
 
+const frontierStroke: Record<string, string> = {
+  supports: "rgba(34,211,238,0.75)",
+  contradicts: "rgba(251,113,133,0.78)",
+  context: "rgba(167,139,250,0.72)",
+};
+
 function BoardInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<BoardNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [selected, setSelected] = useState<{ nodeId: string; concept: GraphNode } | null>(null);
+  const [selected, setSelected] = useState<SelectedConcept | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -95,6 +117,10 @@ function BoardInner() {
   const [tutor, setTutor] = useState<TutorResponse | null>(null);
   const [tutorBusy, setTutorBusy] = useState(false);
   const [tutorError, setTutorError] = useState<string | null>(null);
+  const [frontierProposal, setFrontierProposal] =
+    useState<FrontierProposalResponse | null>(null);
+  const [frontierBusy, setFrontierBusy] = useState(false);
+  const [frontierError, setFrontierError] = useState<string | null>(null);
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [boards, setBoards] = useState<BoardSummary[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -175,7 +201,7 @@ function BoardInner() {
       setNodes((ns) =>
         ns.map((n) => {
           if (n.id !== id || n.type !== "knowledge") return n;
-          const data = n.data as { concept: GraphNode };
+          const data = n.data as KnowledgeNodeData;
           return { ...n, data: { ...data, concept: { ...data.concept, ...patch } } };
         }),
       );
@@ -200,7 +226,18 @@ function BoardInner() {
     () =>
       nodes
         .filter((n) => n.selected && n.type === "knowledge")
-        .map((n) => (n.data as { concept: GraphNode }).concept),
+        .map((n) => (n.data as KnowledgeNodeData).concept),
+    [nodes],
+  );
+
+  const selectedKnowledgeWithNodeIds = useCallback(
+    () =>
+      nodes
+        .filter((n) => n.selected && n.type === "knowledge")
+        .map((n) => ({
+          ...(n.data as KnowledgeNodeData).concept,
+          node_id: n.id,
+        })),
     [nodes],
   );
 
@@ -254,6 +291,134 @@ function BoardInner() {
     );
     window.open("/present", "_blank", "noopener,noreferrer");
   }, [selectedKnowledge]);
+
+  const openArena = useCallback(() => {
+    const concepts = selectedKnowledgeWithNodeIds();
+    if (!concepts.length) {
+      setAiError("Select concept nodes before opening Tutor Arena.");
+      return;
+    }
+    localStorage.setItem(
+      "miro-ai-arena",
+      JSON.stringify({
+        createdAt: new Date().toISOString(),
+        board_id: currentBoardId,
+        selected_nodes: concepts,
+      }),
+    );
+    window.open("/arena", "_blank", "noopener,noreferrer");
+  }, [currentBoardId, selectedKnowledgeWithNodeIds]);
+
+  const runFrontier = useCallback(async () => {
+    const selection = selectedKnowledgeWithNodeIds();
+    if (!selection.length || frontierBusy) {
+      setFrontierError("Select concept nodes before expanding the frontier.");
+      return;
+    }
+    setFrontierBusy(true);
+    setFrontierError(null);
+    try {
+      const query = selection.map((concept) => concept.label).join(", ");
+      const response = await expandFrontier({
+        board_id: currentBoardId,
+        query,
+        selection,
+        source_types: ["mock"],
+        budget: "cheap",
+      });
+      setFrontierProposal(response);
+    } catch (e) {
+      setFrontierError(e instanceof Error ? e.message : "Frontier expansion failed");
+    } finally {
+      setFrontierBusy(false);
+    }
+  }, [currentBoardId, frontierBusy, selectedKnowledgeWithNodeIds]);
+
+  const acceptFrontier = useCallback(async () => {
+    if (!frontierProposal) return;
+    try {
+      const response = await acceptFrontierProposal(frontierProposal.proposal_id);
+      const proposal = response.proposal;
+      const prefix = response.proposal_id.slice(0, 8);
+      const selectedNodes = nodes.filter((n) => n.selected && n.type === "knowledge");
+      const center = selectedNodes.length
+        ? selectedNodes.reduce(
+            (acc, node) => ({
+              x: acc.x + node.position.x / selectedNodes.length,
+              y: acc.y + node.position.y / selectedNodes.length,
+            }),
+            { x: 0, y: 0 },
+          )
+        : screenToFlowPosition({
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+          });
+      const idMap = new Map(
+        proposal.nodes.map((node) => [node.id, `${prefix}-${node.id}`]),
+      );
+      const sourceName = proposal.sources[0]?.title ?? "Mock research source";
+      takeSnapshot();
+      setNodes((current) => [
+        ...current,
+        ...proposal.nodes.map((concept, index) => ({
+          id: idMap.get(concept.id) ?? `${prefix}-${concept.id}`,
+          type: "knowledge",
+          position: {
+            x: center.x + 360,
+            y: center.y - 150 + index * 150,
+          },
+          data: {
+            concept,
+            sourceDocumentName: sourceName,
+          },
+        })),
+      ]);
+      setEdges((current) => [
+        ...current,
+        ...proposal.edges.map((edge, index) => {
+          const kind = edge.kind ?? edge.label;
+          return {
+            id: `${prefix}-frontier-edge-${index}`,
+            source: idMap.get(edge.source) ?? edge.source,
+            target: idMap.get(edge.target) ?? edge.target,
+            label: edge.label,
+            data: { kind },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: frontierStroke[kind] ?? "rgba(148,163,184,0.7)",
+            },
+            style: {
+              stroke: frontierStroke[kind] ?? "rgba(148,163,184,0.55)",
+              strokeWidth: kind === "contradicts" ? 2.25 : 1.75,
+              strokeDasharray: kind === "contradicts" ? "6 4" : undefined,
+            },
+          };
+        }),
+      ]);
+      setFrontierProposal(null);
+      setTimeout(() => fitView({ duration: 600, padding: 0.15 }), 50);
+    } catch (e) {
+      setFrontierError(e instanceof Error ? e.message : "Could not accept proposal");
+    }
+  }, [
+    fitView,
+    frontierProposal,
+    nodes,
+    screenToFlowPosition,
+    setEdges,
+    setNodes,
+    takeSnapshot,
+  ]);
+
+  const rejectFrontier = useCallback(async () => {
+    if (!frontierProposal) return;
+    try {
+      await rejectFrontierProposal(frontierProposal.proposal_id);
+      setFrontierProposal(null);
+    } catch (e) {
+      setFrontierError(e instanceof Error ? e.message : "Could not reject proposal");
+    }
+  }, [frontierProposal]);
 
   const runTutor = useCallback(async () => {
     const concepts = selectedKnowledge();
@@ -629,7 +794,11 @@ function BoardInner() {
             x: (layout[concept.id]?.x ?? 0) + offsetX,
             y: (layout[concept.id]?.y ?? 0) + offsetY,
           },
-          data: { concept },
+          data: {
+            concept,
+            sourceDocumentId: canvas.document_id,
+            sourceDocumentName: (docNode.data as DocumentMeta).filename,
+          },
         }));
 
         const hasIncoming = new Set(canvas.graph.edges.map((e) => e.target));
@@ -693,7 +862,7 @@ function BoardInner() {
       const selection = nodes
         .filter((n) => n.selected && n.type === "knowledge")
         .map((n) => {
-          const c = (n.data as { concept: GraphNode }).concept;
+          const c = (n.data as KnowledgeNodeData).concept;
           const source = c.source_span;
           return {
             label: c.label,
@@ -805,7 +974,13 @@ function BoardInner() {
 
   const onNodeClick: NodeMouseHandler<BoardNode> = useCallback((_, node) => {
     if (node.type === "knowledge") {
-      setSelected({ nodeId: node.id, concept: (node.data as { concept: GraphNode }).concept });
+      const data = node.data as KnowledgeNodeData;
+      setSelected({
+        nodeId: node.id,
+        concept: data.concept,
+        sourceDocumentId: data.sourceDocumentId,
+        sourceDocumentName: data.sourceDocumentName,
+      });
     }
   }, []);
 
@@ -1143,6 +1318,14 @@ function BoardInner() {
                     action: runTutor,
                   },
                   {
+                    label: "Open Tutor Arena",
+                    action: openArena,
+                  },
+                  {
+                    label: "Expand frontier",
+                    action: runFrontier,
+                  },
+                  {
                     label: "Argument lens",
                     action: () => setLensMode("argument"),
                   },
@@ -1189,6 +1372,99 @@ function BoardInner() {
               </div>
             </div>
           </div>
+        )}
+
+        {(frontierProposal || frontierBusy || frontierError) && (
+          <aside className="glass absolute left-24 top-20 z-30 w-[440px] max-w-[calc(100vw-8rem)] rounded-2xl p-4 shadow-[0_12px_48px_rgba(0,0,0,0.45)]">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300/80">
+                  Research frontier
+                </div>
+                {frontierProposal && (
+                  <div className="mt-1 truncate text-[11px] text-slate-500">
+                    {frontierProposal.proposal.query}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setFrontierProposal(null);
+                  setFrontierError(null);
+                }}
+                className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/8 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            {frontierBusy && (
+              <div className="shimmer-text text-sm">Expanding cited frontier...</div>
+            )}
+            {frontierError && (
+              <div className="rounded-xl border border-red-400/30 bg-red-400/5 px-3 py-2 text-sm text-red-300">
+                {frontierError}
+              </div>
+            )}
+            {frontierProposal && !frontierBusy && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    Source ledger
+                  </div>
+                  {frontierProposal.proposal.sources.map((source) => (
+                    <div key={source.id} className="text-sm text-slate-200">
+                      {source.title}
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {source.kind} | {source.sha256?.slice(0, 12)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="max-h-72 space-y-2 overflow-y-auto">
+                  {frontierProposal.proposal.nodes.map((node) => {
+                    const claim = frontierProposal.proposal.claims.find(
+                      (item) => item.quote === node.source_quote,
+                    );
+                    return (
+                      <div
+                        key={node.id}
+                        className="rounded-xl border border-white/8 bg-black/20 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-semibold text-slate-100">
+                            {node.label}
+                          </div>
+                          <span className="rounded bg-cyan-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-200">
+                            {claim?.stance ?? "context"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                          {node.summary}
+                        </p>
+                        <div className="mt-2 border-l-2 border-cyan-400/40 pl-2 text-[11px] italic leading-relaxed text-slate-500">
+                          {node.source_quote}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => void rejectFrontier()}
+                    className="rounded-lg bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/10"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => void acceptFrontier()}
+                    className="rounded-lg bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25"
+                  >
+                    Accept nodes
+                  </button>
+                </div>
+              </div>
+            )}
+          </aside>
         )}
 
         {libraryOpen && (
@@ -1311,6 +1587,8 @@ function BoardInner() {
         {selected && (
           <NodePanel
             concept={selected.concept}
+            documentId={selected.sourceDocumentId}
+            documentName={selected.sourceDocumentName}
             onChange={(patch) => patchKnowledgeNode(selected.nodeId, patch)}
             onClose={() => setSelected(null)}
           />

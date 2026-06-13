@@ -12,7 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from db import UPLOAD_DIR, get_db, init_db
+from services.arena import evaluate_answer, finish_session, initial_mastery, question_for
 from services.artifact_generator import generate_artifacts
+from services.frontier import build_mock_frontier
 from services.graph_extractor import extract_graph
 from services.llm import LIGHT_MODEL, PROVIDER, QUALITY_MODEL
 from services.pdf_parser import extract_document
@@ -30,6 +32,7 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MIRO_AI_MAX_UPLOAD_BYTES", str(25 * 1024 
 MAX_PROMPT_CHARS = int(os.environ.get("MIRO_AI_MAX_PROMPT_CHARS", "12000"))
 MAX_CODE_CHARS = int(os.environ.get("MIRO_AI_MAX_CODE_CHARS", "20000"))
 SERVER_EXECUTION_ENABLED = env_bool("MIRO_AI_ENABLE_SERVER_EXECUTION", False)
+LIVE_RESEARCH_ENABLED = env_bool("MIRO_AI_ENABLE_LIVE_RESEARCH", False)
 
 app = FastAPI(title="Miro-AI")
 
@@ -53,6 +56,7 @@ async def get_config():
         "provider": PROVIDER,
         "quality_model": QUALITY_MODEL,
         "light_model": LIGHT_MODEL,
+        "live_research_enabled": LIVE_RESEARCH_ENABLED,
         "privacy_boundary": (
             "Uploaded PDFs are stored by this local backend and sent to the "
             "configured AI provider only when you request AI analysis."
@@ -115,6 +119,32 @@ async def list_documents():
     return {"documents": [dict(row) for row in rows]}
 
 
+@app.get("/documents/{doc_id}/pages/{page_number}")
+async def get_document_page(doc_id: str, page_number: int):
+    if page_number < 1:
+        raise HTTPException(400, "Page number must be at least 1")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, filename, text_json, page_count FROM documents WHERE id = ?",
+            (doc_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Document not found")
+    pages = json.loads(row["text_json"]) if row["text_json"] else []
+    page = next((item for item in pages if int(item["page"]) == page_number), None)
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return {
+        "document_id": row["id"],
+        "filename": row["filename"],
+        "page": int(page["page"]),
+        "page_count": row["page_count"],
+        "text": page["text"],
+        "start_char": page.get("start_char"),
+        "end_char": page.get("end_char"),
+    }
+
+
 class AnalyzeRequest(BaseModel):
     intent: str | None = None
     board_id: str = "default"
@@ -158,6 +188,7 @@ async def get_canvas(canvas_id: str):
         raise HTTPException(404, "Canvas not found")
     return {
         "id": row["id"],
+        "document_id": row["document_id"],
         "title": row["title"],
         "graph": json.loads(row["graph_json"]),
         "layout": json.loads(row["layout_json"]) if row["layout_json"] else None,
@@ -257,6 +288,285 @@ async def tutor(body: TutorRequest):
     except RuntimeError as e:
         raise HTTPException(503, str(e))
     return result.model_dump()
+
+
+class FrontierRequest(BaseModel):
+    board_id: str = "default"
+    query: str | None = Field(default=None, max_length=1000)
+    selection: list[dict] = Field(default_factory=list, max_length=40)
+    source_types: list[str] = Field(default_factory=lambda: ["mock"])
+    budget: str = Field(default="cheap", max_length=32)
+
+
+@app.post("/research/frontier")
+async def create_frontier(body: FrontierRequest):
+    if not body.selection:
+        raise HTTPException(400, "Select at least one grounded node first")
+    if any(source_type != "mock" for source_type in body.source_types):
+        if not LIVE_RESEARCH_ENABLED:
+            raise HTTPException(403, "Live research fetching is disabled")
+        raise HTTPException(501, "Live research fetching is not implemented yet")
+    try:
+        proposal = build_mock_frontier(
+            board_id=body.board_id,
+            query=body.query,
+            selection=body.selection,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    proposal_id = uuid.uuid4().hex
+    source_node_ids = [
+        str(node.get("node_id") or node.get("id") or node.get("label"))
+        for node in body.selection
+    ]
+    with get_db() as conn:
+        for source in proposal["sources"]:
+            conn.execute(
+                """INSERT INTO sources
+                   (id, kind, title, url, local_path, sha256, content_text, metadata_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO NOTHING""",
+                (
+                    source["id"],
+                    source["kind"],
+                    source["title"],
+                    source["url"],
+                    source["local_path"],
+                    source["sha256"],
+                    source["content_text"],
+                    json.dumps(source.get("metadata") or {}),
+                ),
+            )
+        for claim in proposal["claims"]:
+            conn.execute(
+                """INSERT INTO claims
+                   (id, source_id, text, quote, page, start_char, end_char,
+                    url_anchor, stance, confidence)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO NOTHING""",
+                (
+                    claim["id"],
+                    claim["source_id"],
+                    claim["text"],
+                    claim["quote"],
+                    claim["page"],
+                    claim["start_char"],
+                    claim["end_char"],
+                    claim["url_anchor"],
+                    claim["stance"],
+                    claim["confidence"],
+                ),
+            )
+        conn.execute(
+            """INSERT INTO graph_proposals
+               (id, board_id, source_node_ids_json, proposal_json, status)
+               VALUES (?, ?, ?, ?, 'pending')""",
+            (
+                proposal_id,
+                body.board_id,
+                json.dumps(source_node_ids),
+                json.dumps(proposal),
+            ),
+        )
+    return {"proposal_id": proposal_id, "status": "pending", "proposal": proposal}
+
+
+@app.post("/research/proposals/{proposal_id}/accept")
+async def accept_frontier_proposal(proposal_id: str):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT proposal_json, status FROM graph_proposals WHERE id = ?",
+            (proposal_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Proposal not found")
+        conn.execute(
+            """UPDATE graph_proposals
+               SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (proposal_id,),
+        )
+    return {
+        "proposal_id": proposal_id,
+        "status": "accepted",
+        "proposal": json.loads(row["proposal_json"]),
+    }
+
+
+@app.post("/research/proposals/{proposal_id}/reject")
+async def reject_frontier_proposal(proposal_id: str):
+    with get_db() as conn:
+        cur = conn.execute(
+            """UPDATE graph_proposals
+               SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (proposal_id,),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Proposal not found")
+    return {"proposal_id": proposal_id, "status": "rejected"}
+
+
+class TutorSessionRequest(BaseModel):
+    board_id: str = "default"
+    selected_nodes: list[dict] = Field(default_factory=list, min_length=1, max_length=40)
+    mode: str = Field(default="socratic", max_length=40)
+
+
+@app.post("/tutor/sessions")
+async def create_tutor_session(body: TutorSessionRequest):
+    session_id = uuid.uuid4().hex
+    node_ids = [
+        str(node.get("node_id") or node.get("id") or node.get("label"))
+        for node in body.selected_nodes
+    ]
+    mastery = initial_mastery(body.selected_nodes)
+    question = question_for(body.selected_nodes, 0)
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO tutor_sessions
+               (id, board_id, selected_node_ids_json, selected_nodes_json, mode, mastery_json)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                body.board_id,
+                json.dumps(node_ids),
+                json.dumps(body.selected_nodes),
+                body.mode,
+                json.dumps(mastery),
+            ),
+        )
+        if question:
+            conn.execute(
+                """INSERT INTO tutor_turns (id, session_id, question_json)
+                   VALUES (?, ?, ?)""",
+                (uuid.uuid4().hex, session_id, json.dumps(question)),
+            )
+    return {
+        "session_id": session_id,
+        "status": "active",
+        "mode": body.mode,
+        "mastery": mastery,
+        "current_question": question,
+        "selected_nodes": body.selected_nodes,
+    }
+
+
+class TutorAnswerRequest(BaseModel):
+    answer: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/tutor/sessions/{session_id}/answer")
+async def answer_tutor_question(session_id: str, body: TutorAnswerRequest):
+    with get_db() as conn:
+        session = conn.execute(
+            "SELECT * FROM tutor_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            raise HTTPException(404, "Tutor session not found")
+        turn = conn.execute(
+            """SELECT * FROM tutor_turns
+               WHERE session_id = ? AND answer_text IS NULL
+               ORDER BY created_at DESC LIMIT 1""",
+            (session_id,),
+        ).fetchone()
+        if not turn:
+            raise HTTPException(409, "No active question")
+        selection = json.loads(session["selected_nodes_json"])
+        mastery = json.loads(session["mastery_json"])
+        question = json.loads(turn["question_json"])
+        evaluation = evaluate_answer(body.answer, question, mastery)
+        answered_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM tutor_turns WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()["count"]
+        next_question = question_for(selection, int(answered_count))
+        conn.execute(
+            """UPDATE tutor_turns
+               SET answer_text = ?, evaluation_json = ?
+               WHERE id = ?""",
+            (body.answer, json.dumps(evaluation), turn["id"]),
+        )
+        if next_question:
+            conn.execute(
+                """INSERT INTO tutor_turns (id, session_id, question_json)
+                   VALUES (?, ?, ?)""",
+                (uuid.uuid4().hex, session_id, json.dumps(next_question)),
+            )
+        else:
+            conn.execute(
+                """UPDATE tutor_sessions
+                   SET status = 'ready_to_finish', updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (session_id,),
+            )
+        conn.execute(
+            """UPDATE tutor_sessions
+               SET mastery_json = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (json.dumps(mastery), session_id),
+        )
+        for node_id, item in mastery.items():
+            conn.execute(
+                """INSERT INTO node_mastery
+                   (board_id, node_id, state, score, last_seen_at)
+                   VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                   ON CONFLICT(board_id, node_id) DO UPDATE
+                   SET state = excluded.state,
+                       score = excluded.score,
+                       last_seen_at = CURRENT_TIMESTAMP""",
+                (
+                    session["board_id"],
+                    node_id,
+                    item["state"],
+                    item["score"],
+                ),
+            )
+    return {
+        "session_id": session_id,
+        "evaluation": evaluation,
+        "mastery": mastery,
+        "next_question": next_question,
+        "complete": next_question is None,
+    }
+
+
+@app.get("/tutor/sessions/{session_id}")
+async def get_tutor_session(session_id: str):
+    with get_db() as conn:
+        session = conn.execute(
+            "SELECT * FROM tutor_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+    if not session:
+        raise HTTPException(404, "Tutor session not found")
+    return {
+        "session_id": session["id"],
+        "board_id": session["board_id"],
+        "status": session["status"],
+        "mode": session["mode"],
+        "mastery": json.loads(session["mastery_json"]),
+        "selected_nodes": json.loads(session["selected_nodes_json"]),
+    }
+
+
+@app.post("/tutor/sessions/{session_id}/finish")
+async def finish_tutor_session(session_id: str):
+    with get_db() as conn:
+        session = conn.execute(
+            "SELECT * FROM tutor_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            raise HTTPException(404, "Tutor session not found")
+        selection = json.loads(session["selected_nodes_json"])
+        mastery = json.loads(session["mastery_json"])
+        result = finish_session(selection, mastery)
+        conn.execute(
+            """UPDATE tutor_sessions
+               SET status = 'complete', updated_at = CURRENT_TIMESTAMP
+               WHERE id = ?""",
+            (session_id,),
+        )
+    return {"session_id": session_id, **result}
 
 
 @app.get("/board")

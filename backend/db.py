@@ -2,6 +2,7 @@
 
 import os
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("MIRO_AI_DB_PATH", Path(__file__).parent / "miro_ai.db"))
@@ -19,6 +20,10 @@ def init_db() -> None:
     with get_db() as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                name TEXT PRIMARY KEY,
+                applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS documents (
                 id TEXT PRIMARY KEY,
                 filename TEXT NOT NULL,
@@ -67,35 +72,173 @@ def init_db() -> None:
                 latency_ms INTEGER DEFAULT 0,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS sources (
+                id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                url TEXT,
+                local_path TEXT,
+                sha256 TEXT,
+                content_text TEXT,
+                metadata_json TEXT,
+                fetched_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS claims (
+                id TEXT PRIMARY KEY,
+                source_id TEXT REFERENCES sources(id),
+                text TEXT NOT NULL,
+                quote TEXT NOT NULL,
+                page INTEGER,
+                start_char INTEGER,
+                end_char INTEGER,
+                url_anchor TEXT,
+                stance TEXT DEFAULT 'context',
+                confidence REAL DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS graph_proposals (
+                id TEXT PRIMARY KEY,
+                board_id TEXT DEFAULT 'default' REFERENCES boards(id),
+                source_node_ids_json TEXT NOT NULL,
+                proposal_json TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS tutor_sessions (
+                id TEXT PRIMARY KEY,
+                board_id TEXT DEFAULT 'default' REFERENCES boards(id),
+                selected_node_ids_json TEXT NOT NULL,
+                selected_nodes_json TEXT NOT NULL,
+                mode TEXT DEFAULT 'socratic',
+                mastery_json TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS tutor_turns (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES tutor_sessions(id),
+                question_json TEXT NOT NULL,
+                answer_text TEXT,
+                evaluation_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS node_mastery (
+                board_id TEXT NOT NULL,
+                node_id TEXT NOT NULL,
+                state TEXT NOT NULL,
+                score REAL DEFAULT 0,
+                last_seen_at TEXT,
+                due_at TEXT,
+                PRIMARY KEY (board_id, node_id)
+            );
             """
         )
-        _ensure_columns(
-            conn,
-            "documents",
-            {
-                "text_json": "TEXT",
-                "page_count": "INTEGER DEFAULT 0",
-                "sha256": "TEXT",
-                "size_bytes": "INTEGER DEFAULT 0",
-            },
+        _run_migration(conn, "20260613_document_page_metadata", _migrate_documents)
+        _run_migration(conn, "20260613_board_metadata", _migrate_boards)
+        _run_migration(conn, "20260613_canvas_board_id", _migrate_canvases)
+        _run_migration(
+            conn, "20260613_research_frontier_tables", _migrate_research_tables
         )
-        _ensure_columns(
-            conn,
-            "boards",
-            {
-                "title": "TEXT DEFAULT 'Default board'",
-                "created_at": "TEXT",
-            },
+        _run_migration(
+            conn, "20260613_tutor_arena_tables", _migrate_tutor_tables
         )
-        conn.execute(
-            "UPDATE boards SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
-        )
-        _ensure_columns(conn, "canvases", {"board_id": "TEXT DEFAULT 'default'"})
         conn.execute(
             """INSERT INTO boards (id, title, state_json)
                VALUES ('default', 'Default board', '{"nodes":[],"edges":[]}')
                ON CONFLICT(id) DO NOTHING"""
         )
+
+
+def _run_migration(
+    conn: sqlite3.Connection,
+    name: str,
+    migration: Callable[[sqlite3.Connection], None],
+) -> None:
+    row = conn.execute(
+        "SELECT name FROM schema_migrations WHERE name = ?", (name,)
+    ).fetchone()
+    if row:
+        return
+    migration(conn)
+    conn.execute("INSERT INTO schema_migrations (name) VALUES (?)", (name,))
+
+
+def _migrate_documents(conn: sqlite3.Connection) -> None:
+    _ensure_columns(
+        conn,
+        "documents",
+        {
+            "text_json": "TEXT",
+            "page_count": "INTEGER DEFAULT 0",
+            "sha256": "TEXT",
+            "size_bytes": "INTEGER DEFAULT 0",
+        },
+    )
+
+
+def _migrate_boards(conn: sqlite3.Connection) -> None:
+    _ensure_columns(
+        conn,
+        "boards",
+        {
+            "title": "TEXT DEFAULT 'Default board'",
+            "created_at": "TEXT",
+        },
+    )
+    conn.execute(
+        "UPDATE boards SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"
+    )
+    conn.execute(
+        "UPDATE boards SET title = 'Default board' WHERE title IS NULL OR title = ''"
+    )
+
+
+def _migrate_canvases(conn: sqlite3.Connection) -> None:
+    _ensure_columns(conn, "canvases", {"board_id": "TEXT DEFAULT 'default'"})
+
+
+def _migrate_research_tables(conn: sqlite3.Connection) -> None:
+    _ensure_columns(
+        conn,
+        "sources",
+        {
+            "content_text": "TEXT",
+            "metadata_json": "TEXT",
+            "fetched_at": "TEXT",
+        },
+    )
+    _ensure_columns(
+        conn,
+        "claims",
+        {
+            "url_anchor": "TEXT",
+            "stance": "TEXT DEFAULT 'context'",
+            "confidence": "REAL DEFAULT 0",
+        },
+    )
+    _ensure_columns(
+        conn,
+        "graph_proposals",
+        {
+            "status": "TEXT DEFAULT 'pending'",
+            "updated_at": "TEXT",
+        },
+    )
+
+
+def _migrate_tutor_tables(conn: sqlite3.Connection) -> None:
+    _ensure_columns(
+        conn,
+        "tutor_sessions",
+        {
+            "mode": "TEXT DEFAULT 'socratic'",
+            "status": "TEXT DEFAULT 'active'",
+            "updated_at": "TEXT",
+        },
+    )
 
 
 def _ensure_columns(
